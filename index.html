@@ -287,11 +287,9 @@ mark{background:#fde68a;color:inherit;padding:0 1px;border-radius:2px}
 
   <div id="fchips"></div>
 
-  <div id="view-dash" class="view on"></div>
-  <div id="view-delivery" class="view"></div>
-  <div id="view-oligio" class="view"></div>
-  <div id="view-comm" class="view"></div>
-  <div id="view-list" class="view"></div>
+  <div id="view-work" class="view on"></div>
+  <div id="view-ledger" class="view"></div>
+  <div id="view-closing" class="view"></div>
   <div id="view-messages" class="view"></div>
 </main>
 </div>
@@ -464,23 +462,29 @@ function filtered(){ return ROWS.filter(r=>{
 
 /* ── 네비/라우팅 ── */
 const VIEWS=[
- ['dash','bi-speedometer2','대시보드','국내 계약 · 납품 운영 요약'],
- ['delivery','bi-truck','납품 확인','수주 대비 납품 · 지연·지방 추적'],
- ['oligio','bi-ticket-perforated','쿠폰·적립금','제품별 쿠폰/적립금 지급 관리(누락 방지)'],
- ['comm','bi-percent','판매수수료','대리점·딜러 수수료 지급 여부'],
- ['list','bi-card-list','계약 리스트','전체 계약 검색·조회'],
+ ['work','bi-lightning-charge','워크데스크','오늘 처리할 일 — 시스템이 계산한 큐'],
+ ['ledger','bi-journal-text','계약 대장','전체 계약 검색·조회·입력'],
+ ['closing','bi-calendar2-check','월말 정리','월별 완결 체크·마감'],
  ['messages','bi-chat-dots','메시지','팀 공유 · 변동 공지']];
-const NEEDTOOLS={delivery:1,oligio:1,comm:1,list:1};
+const NEEDTOOLS={ledger:1};
+function queues(){ const T=today0();
+  const undel=ROWS.filter(r=>!has(r.dDelivered));
+  return {
+    late: undel.filter(r=>{const d=pd(r.dDeliverDue);return d&&d<T;}).sort((a,b)=>pd(a.dDeliverDue)-pd(b.dDeliverDue)),
+    due:  undel.filter(r=>{const d=pd(r.dDeliverDue);return !d||d>=T;}).sort((a,b)=>{const x=pd(a.dDeliverDue),y=pd(b.dDeliverDue);if(!x&&!y)return 0;if(!x)return 1;if(!y)return -1;return x-y;}),
+    coup: ROWS.filter(r=>isCoupon(r.product)&&has(r.dDelivered)&&!has(r.couponDate)),
+    comm: ROWS.filter(r=>(r.channel==='대리점'||r.channel==='딜러')&&!commPaid(r)),
+    tax:  ROWS.filter(r=>!has(r.dTax))
+  };
+}
 function navBadge(k){
-  if(k==='delivery'){ const n=ROWS.filter(r=>!has(r.dDelivered)).length; return n?'<span class="bdg rd">'+n+'</span>':''; }
-  if(k==='oligio'){ const n=ROWS.filter(r=>isCoupon(r.product)&&has(r.dDelivered)&&!has(r.couponDate)).length; return n?'<span class="bdg rd">'+n+'</span>':''; }
-  if(k==='comm'){ const n=ROWS.filter(r=>(r.channel==='대리점'||r.channel==='딜러')&&!(has(r.commission)&&String(r.commission).trim()!=='-')).length; return n?'<span class="bdg rd">'+n+'</span>':''; }
+  if(k==='work'){ const q=queues(); const n=q.late.length+q.coup.length; return n?'<span class="bdg rd">'+n+'</span>':''; }
   if(k==='messages'){ const n=unreadBoard(); return n?'<span class="bdg rd">'+n+'</span>':''; }
   return '';
 }
 function buildNav(){ document.getElementById('nav').innerHTML=VIEWS.map(v=>'<button class="tnav" data-v="'+v[0]+'" onclick="go(\''+v[0]+'\')"><i class="bi '+v[1]+'"></i><span class="lbl">'+v[2]+'</span>'+navBadge(v[0])+'</button>').join(''); }
 function go(v){ location.hash='#'+v; }
-function route(){ const v=(location.hash||'').replace(/^#/,'')||'dash'; curView=VIEWS.some(x=>x[0]===v)?v:'dash'; render(); }
+function route(){ const v=(location.hash||'').replace(/^#/,'')||'work'; curView=VIEWS.some(x=>x[0]===v)?v:'work'; render(); }
 window.addEventListener('hashchange',route);
 
 function render(){
@@ -492,7 +496,7 @@ function render(){
   const R=useF?filtered():ROWS;
   document.getElementById('fcount').innerHTML='<b>'+R.length+'</b>건';
   renderChips(useF);
-  ({dash:vDash,delivery:vDelivery,oligio:vOligio,comm:vComm,list:vList,messages:vMessages}[curView])(R);
+  ({work:vWork,ledger:vLedger,closing:vClosing,messages:vMessages}[curView])(R);
 }
 function renderChips(show){ const el=document.getElementById('fchips'); if(!el)return;
   if(!show){ el.innerHTML=''; return; }
@@ -516,6 +520,11 @@ function clearF(k){ if(k==='months'){F.months.clear();document.querySelectorAll(
 function st(icon,title,hint){ return '<div class="wt-st"><i class="bi '+icon+'"></i>'+title+(hint?'<span class="hint">'+hint+'</span>':'')+'</div>'; }
 function fact(l,big,unit,sub,cls,onclick){ return '<div class="wt-fact'+(onclick?' clk':'')+'"'+(onclick?' onclick="'+onclick+'"':'')+'><span class="l">'+l+'</span><b'+(cls?' class="'+cls+'"':'')+'>'+big+(unit?'<span class="u">'+unit+'</span>':'')+'</b><span class="s">'+(sub||'')+'</span></div>'; }
 function stChip(s){ const m={'완료':['#15803d','#ecfdf3'],'미납':['#dc2626','#fef2f2'],'납품':['#d97706','#fffbeb']}[s]||['#64748b','#f1f5f9']; return '<span class="badge-st" style="color:'+m[0]+';background:'+m[1]+'">'+esc(s)+'</span>'; }
+/* 좌우 2단 분할 표 — 세로 길이 절반 */
+function twoColTbl(rows,head,rowFn,maxH){ if(!rows.length)return '<div class="empty">없음</div>';
+  const mid=Math.ceil(rows.length/2), L=rows.slice(0,mid), R2=rows.slice(mid);
+  const t=a=>'<table class="wt-tbl"><thead><tr>'+head+'</tr></thead><tbody>'+a.map(rowFn).join('')+'</tbody></table>';
+  return '<div class="scroll" style="max-height:'+(maxH||64)+'vh"><div class="wt-grid g-2" style="align-items:start;gap:0 26px"><div>'+t(L)+'</div><div>'+(R2.length?t(R2):'')+'</div></div></div>'; }
 
 /* ── 대시보드(운영 요약) ── */
 function vDash(R){
@@ -539,21 +548,23 @@ function vDash(R){
   const monthsAll=[...new Set(R.map(r=>r.saleMonth).filter(Boolean))].sort((a,b)=>a-b);
   const selM=(window.__dashMonth&&monthsAll.indexOf(window.__dashMonth)>=0)?window.__dashMonth:(monthsAll[monthsAll.length-1]||0);
   const monRows=R.filter(r=>r.saleMonth===selM).sort((a,b)=>a.no-b.no);
-  h+='<div class="wt-card" style="margin-bottom:16px"><div class="wt-st"><i class="bi bi-calendar-check"></i>월별 계약'+
+  h+='<div class="wt-grid g-2" style="align-items:start">';
+  h+='<div class="wt-card"><div class="wt-st"><i class="bi bi-calendar-check"></i>월별 계약'+
     '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+monthsAll.map(m=>'<button class="wt-tab'+(m===selM?' on':'')+'" style="padding:3px 11px" onclick="dashMonth('+m+')">'+m+'월</button>').join('')+'</span>'+
     '<span class="hint">'+monRows.length+'건 · 팀장 입력 시 즉시 반영</span></div>'+
-    (monRows.length?'<div class="scroll" style="max-height:460px"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">사업자번호</th><th class="l">제품</th><th>납품일</th><th class="l">담당</th><th>납품</th><th>지급</th></tr></thead><tbody>'+
+    (monRows.length?'<div class="scroll" style="max-height:520px"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">사업자번호</th><th class="l">제품</th><th>납품일</th><th class="l">담당</th><th>납품</th><th>지급</th></tr></thead><tbody>'+
     monRows.map(r=>{const del=has(r.dDelivered),cp=isCoupon(r.product),paid=has(r.couponDate);
       return '<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l tx2">'+esc(r.biznum||'-')+'</td><td class="l">'+esc(r.product)+'</td><td>'+esc(r.dDelivered||'-')+'</td><td class="l">'+esc(r.rep)+'</td><td>'+(del?'<i class="bi bi-check-circle-fill" style="color:var(--green)"></i>':'<i class="bi bi-circle" style="color:#cbd5e1"></i>')+'</td><td>'+(cp?(paid?'<i class="bi bi-check-circle-fill" style="color:var(--green)"></i>':'<i class="bi bi-exclamation-circle-fill" style="color:var(--amber)"></i>'):'<span class="mut">-</span>')+'</td></tr>';}).join('')+
     '</tbody></table></div>':'<div class="empty">해당 월 계약이 없습니다</div>')+'</div>';
-  // 납품 임박 (지연/예정) — 전폭
-  const soon=undel.filter(r=>pd(r.dDeliverDue)).sort((a,b)=>pd(a.dDeliverDue)-pd(b.dDeliverDue)).slice(0,12);
-  h+='<div class="wt-card">'+st('bi-truck','납품 임박 / 지연','납품예정일 순 · 지연 붉게 · 행 클릭 상세')+
-    (soon.length?'<div class="scroll" style="max-height:360px"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">지역</th><th>납품예정</th><th class="l">담당</th></tr></thead><tbody>'+
+  // 납품 임박 (지연/예정) — 우측 절반
+  const soon=undel.filter(r=>pd(r.dDeliverDue)).sort((a,b)=>pd(a.dDeliverDue)-pd(b.dDeliverDue)).slice(0,15);
+  h+='<div class="wt-card">'+st('bi-truck','납품 임박 / 지연','납품예정일 순 · 지연 붉게')+
+    (soon.length?'<div class="scroll" style="max-height:520px"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">지역</th><th>납품예정</th><th class="l">담당</th></tr></thead><tbody>'+
     soon.map(r=>{const late=pd(r.dDeliverDue)<T,ls=late?' style="color:var(--red);font-weight:700"':'';
       return '<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.region||'-')+'</td><td'+ls+'>'+esc(r.dDeliverDue)+'</td><td class="l">'+esc(r.rep)+'</td></tr>';}).join('')+
     '</tbody></table></div>':'<div class="empty">임박한 납품이 없습니다</div>')+
     '<div style="text-align:right;margin-top:10px"><span class="wt-tab" onclick="go(\'delivery\')">납품 확인 전체 <i class="bi bi-arrow-right"></i></span></div></div>';
+  h+='</div>';
   document.getElementById('view-dash').innerHTML=h;
 }
 
@@ -570,11 +581,11 @@ function vDelivery(R){
     fact('예정일 도래 전',upcoming.length,'건','정상 대기')+
     fact('예정일 미정',noDate.length,'건','일정 불명확',noDate.length?'rd':'')+
   '</div>';
-  h+='<div class="wt-card">'+st('bi-truck','납품 대기 목록','납품예정일 순 · 지연 붉게 · 지역 필터로 지방 확인 · 행 클릭 상세')+
-    (sorted.length?'<div class="scroll"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">지역</th><th>납품예정</th><th>D-day</th><th class="l">담당</th><th class="l">출고예정(물류)</th></tr></thead><tbody>'+
-    sorted.map(r=>{const d=pd(r.dDeliverDue);const dd=d?Math.round((d-T)/864e5):null;const late=dd!==null&&dd<0;const lst=late?' style="color:var(--red);font-weight:700"':'';
-      return '<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.region||'-')+'</td><td'+lst+'>'+esc(r.dDeliverDue||'미정')+'</td><td'+lst+'>'+(dd===null?'-':(dd<0?(-dd)+'일 지연':dd===0?'D-day':'D-'+dd))+'</td><td class="l">'+esc(r.rep)+'</td><td class="l tx2">'+esc(r.dShipDue||'-')+'</td></tr>';}).join('')+
-    '</tbody></table></div>':'<div class="empty"><i class="bi bi-check-circle" style="color:var(--green)"></i> 조건에 맞는 미납품 계약이 없습니다</div>')+'</div>';
+  h+='<div class="wt-card">'+st('bi-truck','납품 대기 목록','납품예정일 순 · 지연 붉게 · 좌→우 순서 · 행 클릭 상세')+
+    (sorted.length?twoColTbl(sorted,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">지역</th><th>납품예정</th><th class="l">담당</th>',
+      r=>{const d=pd(r.dDeliverDue);const late=d&&d<T;const lst=late?' style="color:var(--red);font-weight:700"':'';
+      return '<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.region||'-')+'</td><td'+lst+'>'+esc(r.dDeliverDue||'미정')+'</td><td class="l">'+esc(r.rep)+'</td></tr>';})
+    :'<div class="empty"><i class="bi bi-check-circle" style="color:var(--green)"></i> 조건에 맞는 미납품 계약이 없습니다</div>')+'</div>';
   document.getElementById('view-delivery').innerHTML=h;
 }
 
@@ -592,9 +603,16 @@ function vOligio(R){
     fact('지급 대기',waiting.length,'건','미납품 — 납품 후','',"drillCoupon('waiting')")+
     fact('적립금/쿠폰/카트리지',byType('적립금')+' / '+byType('쿠폰')+' / '+byType('카트리지 쿠폰'),'','Oligio / X·Kiss / Tightan')+
   '</div>';
-  h+='<div class="wt-card" style="margin-bottom:16px">'+st('bi-exclamation-circle','지급 대상 (납품완료·미지급)','[지급] 버튼으로 지급일·수량 입력 · 카드 클릭 상세')+
-    (payable.length?'<div class="scroll"><div class="paygrid">'+
-    payable.map(r=>'<div class="paycard" onclick="detail('+r.no+')"><div class="pc-top"><span class="pc-cust"><span class="mut" style="font-weight:600">#'+r.no+'</span> '+esc(r.cust)+'</span><button class="btn btn-sm btn-warning pc-btn" onclick="event.stopPropagation();payCoupon('+r.no+')">지급</button></div><div class="pc-meta">'+esc(r.product)+' <span class="badge-st" style="color:#2455c4;background:#eef4fd">'+couponType(r.product)+'</span></div><div class="pc-sub">납품 '+esc(r.dDelivered||'-')+' · '+esc(r.rep)+' · <span style="color:var(--amber);font-weight:700">미지급</span></div></div>').join('')+
+  window.__coupSel=new Set();
+  const ctypes=['전체','적립금','쿠폰','카트리지 쿠폰'];
+  const filt=_coupType==='전체'?payable:payable.filter(r=>couponType(r.product)===_coupType);
+  h+='<div class="wt-card" style="margin-bottom:16px"><div class="wt-st"><i class="bi bi-exclamation-circle"></i>지급 대상 (납품완료·미지급)'+
+    '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+ctypes.map(t=>{const n=t==='전체'?payable.length:payable.filter(r=>couponType(r.product)===t).length;return '<button class="wt-tab'+(t===_coupType?' on':'')+'" style="padding:3px 11px" onclick="coupType(\''+t+'\')">'+t+' '+n+'</button>';}).join('')+'</span>'+
+    '<span class="hint">체크 → 일괄 지급 · [지급]=개별</span></div>'+
+    '<div id="bulkbar"></div>'+
+    (filt.length?'<div style="margin:0 0 9px"><label style="font-size:12px;color:var(--text-2);cursor:pointer;user-select:none"><input type="checkbox" id="selall" onclick="coupSelAll(this.checked)"> 이 목록 전체 선택 ('+filt.length+'건)</label></div>'+
+    '<div class="scroll"><div class="paygrid">'+
+    filt.map(r=>'<div class="paycard"><div class="pc-top"><label style="display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer"><input type="checkbox" class="coupchk" data-no="'+r.no+'" onclick="coupSel('+r.no+',this.checked)"><span class="pc-cust"><span class="mut" style="font-weight:600">#'+r.no+'</span> '+esc(r.cust)+'</span></label><button class="btn btn-sm btn-warning pc-btn" onclick="payCoupon('+r.no+')">지급</button></div><div class="pc-meta" style="cursor:pointer" onclick="detail('+r.no+')">'+esc(r.product)+' <span class="badge-st" style="color:#2455c4;background:#eef4fd">'+couponType(r.product)+'</span></div><div class="pc-sub" style="cursor:pointer" onclick="detail('+r.no+')">납품 '+esc(r.dDelivered||'-')+' · '+esc(r.rep)+' · <span style="color:var(--amber);font-weight:700">미지급</span></div></div>').join('')+
     '</div></div>':'<div class="empty"><i class="bi bi-check-circle" style="color:var(--green)"></i> 미지급 건이 없습니다 (누락 없음)</div>')+'</div>';
   h+='<div class="wt-grid g-2">'+
     '<div class="wt-card">'+st('bi-check2-circle','지급 완료','납품일 · 지급일 · 수량')+
@@ -623,10 +641,9 @@ function vComm(R){
     fact('대리점 / 딜러',daeri+' / '+dealer,'건','수수료 대상 채널')+
     fact('대상 합계',cc.length,'건','본사 제외 · 전체의 '+pctv(cc.length,R.length)+'%')+
   '</div>';
-  const tbl=(rows,title,icon,mb)=>'<div class="wt-card"'+(mb?' style="margin-bottom:16px"':'')+'>'+st(icon,title,rows.length+'건 · 행 클릭 상세(수수료 참조 편집)')+
-    (rows.length?'<div class="scroll"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">채널</th><th>계약금액</th><th class="l">담당</th><th class="l">수수료 참조</th></tr></thead><tbody>'+
-    rows.map(r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.channel)+'</td><td class="tx2">'+fmt(r.amount)+'</td><td class="l">'+esc(r.rep)+'</td><td class="l">'+(commPaid(r)?'<b>'+esc(r.commission)+'</b>':'<span style="color:var(--amber);font-weight:700">미지급</span>')+'</td></tr>').join('')+
-    '</tbody></table></div>':'<div class="empty">없음</div>')+'</div>';
+  const tbl=(rows,title,icon,mb)=>'<div class="wt-card"'+(mb?' style="margin-bottom:16px"':'')+'>'+st(icon,title,rows.length+'건 · 좌→우 순서 · 행 클릭 상세(수수료 참조 편집)')+
+    twoColTbl(rows,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">채널</th><th class="l">담당</th><th class="l">수수료 참조</th>',
+      r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.channel)+'</td><td class="l">'+esc(r.rep)+'</td><td class="l">'+(commPaid(r)?'<b>'+esc(r.commission)+'</b>':'<span style="color:var(--amber);font-weight:700">미지급</span>')+'</td></tr>')+'</div>';
   h+=tbl(unpaid,'수수료 미지급 (대상)','bi-exclamation-circle',true)+tbl(paid,'수수료 지급 완료','bi-check2-circle',false);
   document.getElementById('view-comm').innerHTML=h;
 }
@@ -764,6 +781,24 @@ async function restoreContract(id){ try{ const rows=(await _sb.from('kor_contrac
 function undoToast(msg,id){ const t=document.getElementById('toast'); t.innerHTML=esc(msg)+' <button onclick="restoreContract('+id+');document.getElementById(\'toast\').style.display=\'none\'" style="margin-left:10px;background:#fff;color:var(--ink);border:none;border-radius:6px;padding:3px 11px;font-size:12px;font-weight:700;cursor:pointer">실행취소</button>'; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(()=>{t.style.display='none';t.innerHTML='';},9000); }
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 async function quickDeliver(no){ const c=ROWS.find(r=>r.no===no); if(!c)return; const d=Object.assign({},c); delete d._id; delete d._month; d.dDelivered=todayStr(); if(['미납','납품','미분류',''].indexOf(d.status||'')>=0)d.status='완료'; await saveData(c._id,no,d,'납품완료 처리',no); }
+let _coupType='전체';
+function coupType(t){ _coupType=t; window.__coupSel=new Set(); render(); }
+function coupSel(no,ck){ if(ck)window.__coupSel.add(no); else window.__coupSel.delete(no); renderBulk(); }
+function coupSelAll(ck){ document.querySelectorAll('.coupchk').forEach(c=>{ c.checked=ck; const n=+c.dataset.no; if(ck)window.__coupSel.add(n); else window.__coupSel.delete(n); }); const sa=document.getElementById('selall'); if(sa)sa.checked=ck; renderBulk(); }
+function renderBulk(){ const el=document.getElementById('bulkbar'); if(!el)return; const n=window.__coupSel?window.__coupSel.size:0;
+  el.innerHTML=n?'<div class="chg" style="margin-bottom:10px"><i class="bi bi-check2-square"></i><span class="lb">'+n+'건 선택됨</span><button class="btn btn-sm btn-warning" onclick="bulkPay()"><i class="bi bi-ticket-perforated"></i> 일괄 지급 입력</button><button class="chip-clr" onclick="coupSelAll(false)">선택 해제</button></div>':''; }
+function bulkPay(){ const n=window.__coupSel.size; if(!n)return;
+  document.getElementById('mbox').innerHTML='<div class="mhd"><div><h3><i class="bi bi-ticket-perforated" style="color:var(--amber);margin-right:6px"></i>일괄 지급 기록</h3><div class="tx2" style="font-size:12px;margin-top:3px">선택한 '+n+'건에 동일한 지급일'+ '(·수량)을 기록합니다</div></div><button class="x" onclick="closeModal()"><i class="bi bi-x-lg"></i></button></div>'+
+    '<div class="mbody"><div class="cform"><div class="cf"><label>지급일</label><input id="bk-date" type="date" class="form-control form-control-sm" value="'+todayStr()+'"></div><div class="cf"><label>수량 (선택 · 전체 동일 적용)</label><input id="bk-qty" class="form-control form-control-sm" placeholder="비우면 수량 미기재"></div></div>'+
+    '<div class="cform-foot"><span></span><div style="display:flex;gap:8px"><button class="btn btn-outline-secondary btn-sm" onclick="closeModal()">취소</button><button class="btn btn-primary btn-sm" onclick="saveBulk()"><i class="bi bi-check-lg"></i> '+n+'건 저장</button></div></div></div>';
+  document.getElementById('modal').classList.add('on');
+}
+async function saveBulk(){ const date=document.getElementById('bk-date').value; const qty=(document.getElementById('bk-qty').value||'').trim(); if(!date){toast('지급일을 선택하세요');return;}
+  const nos=[...window.__coupSel]; let ok=0;
+  for(const no of nos){ const c=ROWS.find(r=>r.no===no); if(!c||!c._id)continue; const d=Object.assign({},c); delete d._id; delete d._month; d.couponDate=date; if(qty)d.couponQty=qty;
+    try{ const {error}=await _sb.from('kor_contracts').update({data:d,updated_at:new Date().toISOString(),updated_by:MENAME}).eq('id',c._id); if(!error)ok++; }catch(e){} }
+  toast(ok+'건 지급 기록 완료'); window.__coupSel=new Set(); await loadData(); initFilters(); buildNav(); closeModal(); render();
+}
 function payCoupon(no){ const c=ROWS.find(r=>r.no===no); if(!c)return; window.__editC=c; window.__dno=null;
   document.getElementById('mbox').innerHTML='<div class="mhd"><div><h3><i class="bi bi-ticket-perforated" style="color:var(--amber);margin-right:6px"></i>'+couponType(c.product)+' 지급 기록</h3><div class="tx2" style="font-size:12px;margin-top:3px">#'+no+' '+esc(c.cust)+' · '+esc(c.product)+' · 납품 '+esc(c.dDelivered||'-')+'</div></div><button class="x" onclick="closeModal()"><i class="bi bi-x-lg"></i></button></div>'+
     '<div class="mbody"><div class="cform"><div class="cf"><label>지급일</label><input id="cf-couponDate" type="date" class="form-control form-control-sm" value="'+esc(c.couponDate||todayStr())+'"></div><div class="cf"><label>수량</label><input id="cf-couponQty" class="form-control form-control-sm" value="'+esc(c.couponQty||'')+'" placeholder="예: 120개"></div></div>'+
@@ -787,6 +822,122 @@ async function renderMemo(no){
     '<div class="composer"><textarea id="memo-in" rows="2" placeholder="이 계약에 메모 (변동·특이사항 공유)"></textarea><button class="btn btn-primary btn-sm" onclick="postMemo('+no+')">등록</button></div>';
 }
 async function postMemo(no){ const el=document.getElementById('memo-in'); const b=(el.value||'').trim(); if(!b)return; el.disabled=true; const ok=await postMsg('c:'+no,b); el.disabled=false; if(!ok){ toast('등록 실패'); return; } el.value=''; renderMemo(no); toast('메모 등록'); }
+
+/* ══ 워크데스크 — 시스템이 계산한 처리 큐 + 인라인 처리 ══ */
+let _qTab='late';
+function qTab(t){ _qTab=t; render(); }
+function _abtn(label,fn,no,color){ return '<button class="btn btn-sm '+(color||'btn-outline-primary')+'" style="padding:1px 10px;font-size:11px" onclick="event.stopPropagation();'+fn+'('+no+')">'+label+'</button>'; }
+function vWork(){
+  const q=queues(), T=today0(), c=window.__chg;
+  const chgN=c?(c.neo.length+c.del.length+c.can.length):0;
+  const week=q.due.filter(r=>{const d=pd(r.dDeliverDue);return d&&(d-T)/864e5<=7;});
+  let h='<div class="tx2" style="font-size:11.5px;margin:0 0 12px">기준일 '+esc(DATA.updatedAt||'-')+' · 총 '+ROWS.length+'건 · 큐는 입력 즉시 자동 갱신</div>';
+  h+='<div class="wt-band" style="padding:16px 22px">'+
+    '<div class="wt-hero" style="cursor:pointer" onclick="qTab(\'late\')"><span class="l">납품 지연 <span class="mut" style="font-size:10px;font-weight:500">· 예정일 경과</span></span><b'+(q.late.length?' class="rd"':'')+'>'+q.late.length+'<span class="u">건</span></b><span class="s">최우선 확인 · 처리 →</span></div>'+
+    fact('이번주 납품예정',week.length,'건','D-7 이내','',"qTab('due')")+
+    fact('쿠폰·적립금 지급',q.coup.length,'건','납품완료·미지급','am',"qTab('coup')")+
+    fact('수수료 미처리',q.comm.length,'건','대리점/딜러','',"qTab('comm')")+
+    fact('세금계산서 미발행',q.tax.length,'건',won1(q.tax.reduce((s,x)=>s+(x.krw||0),0)),'',"qTab('tax')")+
+    fact('지난 방문 이후 변동',chgN,'건',chgN?'알림 확인':'변동 없음',chgN?'am':'',chgN?"showChg()":'')+
+  '</div>';
+  const tabs=[['late','납품 지연',q.late.length],['due','납품 대기',q.due.length],['coup','쿠폰·적립금',q.coup.length],['comm','수수료',q.comm.length],['tax','계산서',q.tax.length]];
+  h+='<div class="wt-grid g-32" style="align-items:start">';
+  h+='<div class="wt-card"><div class="wt-st"><i class="bi bi-lightning-charge"></i>처리 큐'+
+    '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+tabs.map(t=>'<button class="wt-tab'+(_qTab===t[0]?' on':'')+'" style="padding:3px 11px" onclick="qTab(\''+t[0]+'\')">'+t[1]+' '+t[2]+'</button>').join('')+'</span>'+
+    '<span class="hint">행 클릭 상세 · 버튼 즉시 처리</span></div>'+qBody(q,week)+'</div>';
+  h+='<div style="display:flex;flex-direction:column;gap:16px">'+
+    '<div class="wt-card">'+st('bi-plus-circle','빠른 작업','')+
+      '<div style="display:flex;flex-direction:column;gap:8px">'+
+      '<button class="wt-tab" style="justify-content:flex-start" onclick="newContract()"><i class="bi bi-plus-lg"></i>신규 계약 입력</button>'+
+      '<button class="wt-tab" style="justify-content:flex-start" onclick="go(\'closing\')"><i class="bi bi-calendar2-check"></i>월말 정리로 이동</button>'+
+      '<button class="wt-tab" style="justify-content:flex-start" onclick="go(\'ledger\')"><i class="bi bi-journal-text"></i>계약 대장 검색</button></div></div>'+
+    '<div class="wt-card">'+st('bi-chat-dots','팀 메시지','최근 4개')+
+      (BOARD_OK?(BOARD.length?BOARD.slice(0,4).map(m=>'<div class="msg" style="padding:8px 2px"><div class="av">'+esc((m.author||'?').slice(0,1))+'</div><div class="bd"><div class="hd"><span class="au">'+esc(m.author)+'</span><span class="tm">'+ago(m.created_at)+'</span></div><div class="tx" style="font-size:12px">'+esc(m.body)+'</div></div></div>').join(''):'<div class="empty" style="padding:14px">아직 메시지가 없습니다</div>'):'<div class="warnnote">메시지 준비 필요</div>')+
+      '<div style="text-align:right;margin-top:8px"><span class="wt-tab" onclick="go(\'messages\')">전체 <i class="bi bi-arrow-right"></i></span></div></div>'+
+  '</div></div>';
+  document.getElementById('view-work').innerHTML=h;
+  if(_qTab==='coup')renderBulk();
+}
+function qBody(q,week){
+  if(_qTab==='late'||_qTab==='due'){ const rows=_qTab==='late'?q.late:q.due;
+    return twoColTbl(rows,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th>납품예정</th><th class="l">담당</th><th></th>',
+      r=>{const late=_qTab==='late';return '<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td'+(late?' style="color:var(--red);font-weight:700"':'')+'>'+esc(r.dDeliverDue||'미정')+'</td><td class="l">'+esc(r.rep)+'</td><td>'+_abtn('납품완료','quickDeliver',r.no,'btn-success')+'</td></tr>';},56);
+  }
+  if(_qTab==='coup'){ window.__coupSel=window.__coupSel||new Set();
+    const ctypes=['전체','적립금','쿠폰','카트리지 쿠폰'];
+    const filt=_coupType==='전체'?q.coup:q.coup.filter(r=>couponType(r.product)===_coupType);
+    return '<div style="margin-bottom:9px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">'+ctypes.map(t=>{const n=t==='전체'?q.coup.length:q.coup.filter(r=>couponType(r.product)===t).length;return '<button class="wt-tab'+(t===_coupType?' on':'')+'" style="padding:3px 11px" onclick="coupType(\''+t+'\')">'+t+' '+n+'</button>';}).join('')+
+      (filt.length?'<label style="font-size:12px;color:var(--text-2);cursor:pointer;margin-left:8px"><input type="checkbox" id="selall" onclick="coupSelAll(this.checked)"> 전체선택</label>':'')+'</div><div id="bulkbar"></div>'+
+      (filt.length?twoColTbl(filt,'<th style="width:26px"></th><th class="rk">#</th><th class="l">거래처</th><th class="l">제품·종류</th><th>납품일</th><th></th>',
+        r=>'<tr onclick="detail('+r.no+')"><td onclick="event.stopPropagation()"><input type="checkbox" class="coupchk" data-no="'+r.no+'" onclick="coupSel('+r.no+',this.checked)"'+(window.__coupSel.has(r.no)?' checked':'')+'></td><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+' <span class="badge-st" style="color:#2455c4;background:#eef4fd">'+couponType(r.product)+'</span></td><td>'+esc(r.dDelivered||'-')+'</td><td>'+_abtn('지급','payCoupon',r.no,'btn-warning')+'</td></tr>',56)
+      :'<div class="empty"><i class="bi bi-check-circle" style="color:var(--green)"></i> 미지급 없음 (누락 없음)</div>');
+  }
+  if(_qTab==='comm'){ return twoColTbl(q.comm,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">채널</th><th class="l">담당</th><th></th>',
+      r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.channel)+'</td><td class="l">'+esc(r.rep)+'</td><td>'+_abtn('참조입력','quickComm',r.no)+'</td></tr>',56); }
+  if(_qTab==='tax'){ return twoColTbl(q.tax,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th>납품일</th><th class="l">담당</th><th></th>',
+      r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td>'+esc(r.dDelivered||'-')+'</td><td class="l">'+esc(r.rep)+'</td><td>'+_abtn('발행일','quickTax',r.no)+'</td></tr>',56); }
+  return '';
+}
+function quickComm(no){ const c=ROWS.find(r=>r.no===no); if(!c)return; window.__dno=null;
+  document.getElementById('mbox').innerHTML='<div class="mhd"><div><h3><i class="bi bi-percent" style="color:var(--blue);margin-right:6px"></i>수수료 참조 입력</h3><div class="tx2" style="font-size:12px;margin-top:3px">#'+no+' '+esc(c.cust)+' · '+esc(c.channel)+'</div></div><button class="x" onclick="closeModal()"><i class="bi bi-x-lg"></i></button></div>'+
+    '<div class="mbody"><div class="cform"><div class="cf wide"><label>수수료 지급 참조 (예: 영업전략파트-260209-4)</label><input id="qc-ref" class="form-control form-control-sm" value="'+esc(c.commission&&c.commission!=='-'?c.commission:'영업전략파트-')+'"></div></div>'+
+    '<div class="cform-foot"><span></span><div style="display:flex;gap:8px"><button class="btn btn-outline-secondary btn-sm" onclick="closeModal()">취소</button><button class="btn btn-primary btn-sm" onclick="saveQuick('+no+',\'commission\',\'qc-ref\',\'수수료 참조 기록\')"><i class="bi bi-check-lg"></i> 저장</button></div></div></div>';
+  document.getElementById('modal').classList.add('on'); }
+function quickTax(no){ const c=ROWS.find(r=>r.no===no); if(!c)return; window.__dno=null;
+  document.getElementById('mbox').innerHTML='<div class="mhd"><div><h3><i class="bi bi-receipt" style="color:var(--blue);margin-right:6px"></i>세금계산서 발행일</h3><div class="tx2" style="font-size:12px;margin-top:3px">#'+no+' '+esc(c.cust)+'</div></div><button class="x" onclick="closeModal()"><i class="bi bi-x-lg"></i></button></div>'+
+    '<div class="mbody"><div class="cform"><div class="cf"><label>발행일</label><input id="qt-date" type="date" class="form-control form-control-sm" value="'+todayStr()+'"></div></div>'+
+    '<div class="cform-foot"><span></span><div style="display:flex;gap:8px"><button class="btn btn-outline-secondary btn-sm" onclick="closeModal()">취소</button><button class="btn btn-primary btn-sm" onclick="saveQuick('+no+',\'dTax\',\'qt-date\',\'발행일 기록\')"><i class="bi bi-check-lg"></i> 저장</button></div></div></div>';
+  document.getElementById('modal').classList.add('on'); }
+async function saveQuick(no,key,inputId,msg){ const c=ROWS.find(r=>r.no===no); if(!c)return; const v=(document.getElementById(inputId).value||'').trim(); if(!v){toast('값을 입력하세요');return;}
+  const d=Object.assign({},c); delete d._id; delete d._month; d[key]=v; await saveData(c._id,no,d,msg,null); }
+
+/* ══ 계약 대장 (엑셀 대체 — 검색·정렬·단계점) ══ */
+function stageDots(r){ const s=[['접수',r.dContract],['출고',r.dShipDue],['납품',r.dDelivered],['계산서',r.dTax]];
+  return '<span style="display:inline-flex;gap:3px" title="'+s.map(x=>x[0]+(has(x[1])?'✓':'—')).join(' · ')+'">'+s.map(x=>'<i style="width:8px;height:8px;border-radius:50%;display:inline-block;background:'+(has(x[1])?'var(--blue)':'#dbe3ec')+'"></i>').join('')+'</span>'; }
+function vLedger(R){
+  R=R.slice().sort((a,b)=>{ let x=a[_sortKey],y=b[_sortKey]; if(typeof x==='string'||typeof y==='string'){x=x||'';y=y||'';return _sortDir*String(x).localeCompare(String(y));} return _sortDir*((x||0)-(y||0)); });
+  const cols=[['no','#','rk'],['cust','거래처','l'],['biznum','사업자번호','l'],['product','제품','l'],['rep','담당자','l'],['channel','채널','l'],['saleMonth','매출월',''],['status','상태','l'],['_stage','진행','l']];
+  let h='<div class="wt-card">'+st('bi-journal-text','계약 대장','헤더 클릭 정렬 · 행 클릭 상세 · '+R.length+'건')+
+    '<div style="text-align:right;margin:-40px 0 8px;display:flex;gap:8px;justify-content:flex-end"><button class="wt-tab" onclick="newContract()"><i class="bi bi-plus-lg"></i>신규</button><button class="wt-tab" onclick="exportCsv()"><i class="bi bi-download"></i>CSV</button></div>'+
+    '<div class="scroll"><table class="wt-tbl"><thead><tr>'+
+    cols.map(c=>'<th class="'+c[2]+'"'+(c[0]==='_stage'?'':' onclick="sortList(\''+c[0]+'\')"')+'>'+c[1]+(_sortKey===c[0]?(_sortDir>0?' ▲':' ▼'):'')+'</th>').join('')+
+    '</tr></thead><tbody>'+
+    (R.length?R.map(c=>'<tr onclick="detail('+c.no+')"><td class="rk">'+c.no+'</td><td class="l nm">'+esc(c.cust)+'</td><td class="l tx2">'+esc(c.biznum||'-')+'</td><td class="l">'+esc(c.product)+'</td><td class="l">'+esc(c.rep)+'</td><td class="l">'+esc(c.channel)+'</td><td>'+(c.saleMonth?c.saleMonth+'월':'-')+'</td><td class="l">'+stChip(c.status)+'</td><td class="l">'+stageDots(c)+'</td></tr>').join(''):'<tr><td colspan="9" class="empty">해당 조건의 계약이 없습니다</td></tr>')+
+    '</tbody></table></div></div>';
+  document.getElementById('view-ledger').innerHTML=h;
+}
+
+/* ══ 월말 정리 (완결 체크매트릭스) ══ */
+let _clsM=0,_clsOpen=false;
+function clsMonth(m){ _clsM=m; render(); }
+function clsToggle(){ _clsOpen=!_clsOpen; render(); }
+function _needs(r){ const need=[]; if(!has(r.dDelivered))need.push('납품'); if(!has(r.dTax))need.push('계산서');
+  if(isCoupon(r.product)&&has(r.dDelivered)&&!has(r.couponDate))need.push('쿠폰지급');
+  if((r.channel==='대리점'||r.channel==='딜러')&&!commPaid(r))need.push('수수료'); return need; }
+function vClosing(){
+  const months=[...new Set(ROWS.map(r=>r.saleMonth).filter(Boolean))].sort((a,b)=>a-b);
+  const m=(months.indexOf(_clsM)>=0)?_clsM:(months[months.length-1]||0); _clsM=m;
+  const rows=ROWS.filter(r=>r.saleMonth===m).sort((a,b)=>a.no-b.no);
+  const open=rows.filter(r=>_needs(r).length);
+  const chk=v=>v?'<i class="bi bi-check-circle-fill" style="color:var(--green)"></i>':'<i class="bi bi-x-circle" style="color:var(--red)"></i>';
+  const nd=(r,k)=>_needs(r).indexOf(k)>=0;
+  const show=_clsOpen?open:rows;
+  let h='<div class="wt-band" style="padding:16px 22px">'+
+    '<div class="wt-hero"><span class="l">'+m+'월 완결률</span><b'+(open.length?'':' class="gr"')+'>'+pctv(rows.length-open.length,rows.length)+'<span class="u">%</span></b><span class="s">'+(rows.length-open.length)+' / '+rows.length+'건 완결 · 미완결 '+open.length+'건</span></div>'+
+    fact('계약 매출',eok(rows.reduce((s,x)=>s+(x.krw||0),0)).toFixed(1),'억',rows.length+'건')+
+    fact('납품 완료',rows.filter(r=>has(r.dDelivered)).length+'/'+rows.length,'','미납 '+rows.filter(r=>!has(r.dDelivered)).length)+
+    fact('계산서 발행',rows.filter(r=>has(r.dTax)).length+'/'+rows.length,'','미발행 '+rows.filter(r=>!has(r.dTax)).length)+
+    fact('쿠폰·수수료 잔여',rows.filter(r=>nd(r,'쿠폰지급')).length+' · '+rows.filter(r=>nd(r,'수수료')).length,'','지급대기 · 미처리')+
+  '</div>';
+  h+='<div class="wt-card"><div class="wt-st"><i class="bi bi-calendar2-check"></i>월별 완결 체크'+
+    '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+months.map(x=>'<button class="wt-tab'+(x===m?' on':'')+'" style="padding:3px 11px" onclick="clsMonth('+x+')">'+x+'월</button>').join('')+'</span>'+
+    '<span class="hint"><label style="cursor:pointer"><input type="checkbox" '+(_clsOpen?'checked':'')+' onclick="clsToggle()"> 미완결만</label> · '+show.length+'건</span></div>'+
+    twoColTbl(show,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">담당</th><th>납품</th><th>계산서</th><th>쿠폰</th><th>수수료</th>',
+      r=>{const cpT=isCoupon(r.product),cmT=(r.channel==='대리점'||r.channel==='딜러');
+      return '<tr onclick="detail('+r.no+')"'+(_needs(r).length?' style="background:#fffdf5"':'')+'><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.rep)+'</td><td>'+chk(has(r.dDelivered))+'</td><td>'+chk(has(r.dTax))+'</td><td>'+(cpT?chk(has(r.couponDate)):'<span class="mut">-</span>')+'</td><td>'+(cmT?chk(commPaid(r)):'<span class="mut">-</span>')+'</td></tr>';},62)+
+    '</div>';
+  document.getElementById('view-closing').innerHTML=h;
+}
 
 /* ── CSV ── */
 function exportCsv(){
