@@ -139,6 +139,13 @@ canvas{max-height:250px}
 #noacc{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:9001;color:var(--ink);text-align:center;padding:30px;gap:16px}
 #toast{display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;z-index:9500}
 .view{display:none}.view.on{display:block}
+.chg{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#eff5ff;border:1px solid #cfe0fb;border-radius:10px;padding:9px 14px;margin-bottom:16px;font-size:12.5px;color:#42506a}
+.chg>i{color:var(--blue);font-size:14px}
+.chg .lb{font-weight:700;color:var(--ink)}
+.chg b{font-weight:700;background:#fff;border:1px solid #d8e3f5;border-radius:20px;padding:2px 11px;color:var(--blue);font-variant-numeric:tabular-nums}
+.chg b.g{color:var(--green);border-color:#bbf7d0}.chg b.r{color:var(--red);border-color:#fecaca}
+.chg .mo{background:none;border:none;color:var(--blue);font-size:12px;font-weight:600;text-decoration:underline;cursor:pointer}
+.chg .cx{margin-left:auto;background:none;border:none;color:var(--mut);font-size:13px;cursor:pointer}
 .mtoggle{display:none}
 @media(max-width:900px){
   .sidebar{transform:translateX(-100%);transition:transform .2s;z-index:600}
@@ -194,6 +201,8 @@ canvas{max-height:250px}
     <div class="asof" id="asof"></div>
   </div>
 
+  <div id="chgbar"></div>
+
   <div class="wt-tools">
     <span class="fl"><i class="bi bi-calendar3"></i> 조회 월</span>
     <span id="mchips"></span>
@@ -202,18 +211,20 @@ canvas{max-height:250px}
     <select id="f-rep" class="form-select form-select-sm" onchange="applyF()"><option value="">전체 담당자</option></select>
     <select id="f-product" class="form-select form-select-sm" onchange="applyF()"><option value="">전체 제품</option></select>
     <select id="f-status" class="form-select form-select-sm" onchange="applyF()"><option value="">전체 상태</option></select>
+    <select id="f-region" class="form-select form-select-sm" onchange="applyF()"><option value="">전체 지역</option></select>
     <input id="f-search" class="form-control form-control-sm" style="min-width:170px" placeholder="거래처·제품 검색" oninput="applyF()">
     <button class="wt-tab" onclick="resetF()"><i class="bi bi-arrow-counterclockwise"></i>초기화</button>
     <span class="wt-cnt" id="fcount"></span>
   </div>
 
   <div id="view-overview" class="view on"></div>
+  <div id="view-delivery" class="view"></div>
+  <div id="view-oligio" class="view"></div>
   <div id="view-rep" class="view"></div>
   <div id="view-product" class="view"></div>
   <div id="view-channel" class="view"></div>
   <div id="view-pay" class="view"></div>
   <div id="view-list" class="view"></div>
-  <div id="view-pending" class="view"></div>
 </main>
 
 <div class="modal-bg" id="modal" onclick="if(event.target===this)closeModal()"><div class="mbox" id="mbox"></div></div>
@@ -224,7 +235,7 @@ const SUPA_URL='https://mhfacbsittfdkknwybhc.supabase.co';
 const SUPA_KEY='sb_publishable_aPMOOWAlyJlMcP1ZM_gpPA_jlrcvCRd';
 const CENTRAL='https://wt-management.github.io/wontech/';
 const _sb=supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
-let DATA=null, ROWS=[], F={months:new Set(), channel:'', rep:'', product:'', status:'', search:''}, _charts=[], curView='overview', ME='';
+let DATA=null, ROWS=[], F={months:new Set(), channel:'', rep:'', product:'', status:'', region:'', search:''}, _charts=[], curView='overview', ME='';
 
 /* ── 유틸 ── */
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -239,6 +250,10 @@ function toast(m){const t=document.getElementById('toast');t.textContent=m;t.sty
 function sum(a,k){return a.reduce((s,x)=>s+(x[k]||0),0);}
 function grp(a,k){const m={};a.forEach(x=>{const v=x[k]||'미분류';(m[v]=m[v]||[]).push(x);});return m;}
 function closeModal(){document.getElementById('modal').classList.remove('on');}
+function has(v){return !!(v&&String(v).trim()&&String(v).trim()!=='-');}
+function pd(s){ if(!has(s))return null; const d=new Date(String(s).slice(0,10)); return isNaN(d)?null:d; }
+function today0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
+function isOli(p){ return /^Oligio/i.test(p||''); }
 
 /* ── 인증 ── */
 (function _sso(){ var h=(location.hash||'').replace(/^#/,''); if(h.indexOf('at=')<0)return;
@@ -257,10 +272,35 @@ async function enter(user){ ME=user.email||'';
   if(!(await allowed(user))){ document.getElementById('load').style.display='none'; document.getElementById('noacc').style.display='flex'; return; }
   try{ const {data:pr}=await _sb.from('crm_profiles').select('display_name,dept').eq('id',user.id).maybeSingle();
     document.getElementById('ui-name').textContent=((pr&&pr.display_name)||ME.split('@')[0])+((pr&&pr.dept)?' · '+pr.dept:''); }catch(e){ document.getElementById('ui-name').textContent=ME.split('@')[0]; }
-  await loadData(); await renderSwitcher();
+  await loadData(); detectChanges(); await renderSwitcher();
   document.getElementById('load').style.display='none'; document.querySelector('.sidebar').style.display='flex';
-  buildNav(); initFilters(); route();
+  buildNav(); initFilters(); route(); renderChgBar();
 }
+/* ── 변동 감지 (개인별 localStorage 스냅샷 diff) ── */
+function detectChanges(){
+  try{ const key='wtKorSnap:'+ME; const cur={};
+    ROWS.forEach(r=>{ cur[r.no]=(has(r.dDelivered)?'D':'_')+(/취소/.test((r.status||'')+(r.pay||''))?'X':''); });
+    let prev=null; try{ prev=JSON.parse(localStorage.getItem(key)||'null'); }catch(e){}
+    const chg={neo:[],del:[],can:[]};
+    if(prev&&prev.map){ ROWS.forEach(r=>{ const p=prev.map[r.no], c=cur[r.no];
+      if(p===undefined){ chg.neo.push(r); }
+      else{ if(p[0]!=='D'&&c[0]==='D')chg.del.push(r); if(p.indexOf('X')<0&&c.indexOf('X')>=0)chg.can.push(r); } }); }
+    window.__chg=(prev&&prev.map)?chg:null;
+    localStorage.setItem(key,JSON.stringify({rev:DATA.updatedAt||'',map:cur}));
+  }catch(e){ window.__chg=null; }
+}
+function renderChgBar(){ const c=window.__chg, el=document.getElementById('chgbar'); if(!el)return;
+  if(!c||(!c.neo.length&&!c.del.length&&!c.can.length)){ el.innerHTML=''; return; }
+  el.innerHTML='<div class="chg"><i class="bi bi-bell-fill"></i><span class="lb">지난 방문 이후 변동</span>'+
+    (c.neo.length?'<b>신규 계약 '+c.neo.length+'</b>':'')+
+    (c.del.length?'<b class="g">납품 완료 전환 '+c.del.length+'</b>':'')+
+    (c.can.length?'<b class="r">취소 '+c.can.length+'</b>':'')+
+    '<button class="mo" onclick="showChg()">자세히</button><button class="cx" onclick="document.getElementById(\'chgbar\').innerHTML=\'\'"><i class="bi bi-x-lg"></i></button></div>'; }
+function showChg(){ const c=window.__chg; if(!c)return;
+  const sec=(t,arr,color)=>arr.length?'<div class="dsec" style="color:'+color+'">'+t+' '+arr.length+'건</div>'+arr.map(r=>'<div class="drow" style="cursor:pointer" onclick="closeModal();detail('+r.no+')"><span class="k">#'+r.no+' '+esc(r.cust)+'</span><span class="v">'+esc(r.product)+' · '+esc(r.region||'')+'</span></div>').join(''):'';
+  document.getElementById('mbox').innerHTML='<div class="mhd"><div><h3>지난 방문 이후 변동</h3><div class="tx2" style="font-size:12px;margin-top:3px">기준일 '+esc(DATA.updatedAt||'')+' · 접속 시점 대비</div></div><button class="x" onclick="closeModal()"><i class="bi bi-x-lg"></i></button></div><div class="mbody">'+
+    (sec('신규 계약',c.neo,'#2563eb'))+(sec('납품 완료 전환',c.del,'#15803d'))+(sec('취소',c.can,'#dc2626'))+'</div>';
+  document.getElementById('modal').classList.add('on'); }
 async function boot(){ let {data}=await _sb.auth.getSession();
   if(!(data&&data.session)){ await new Promise(r=>setTimeout(r,450)); ({data}=await _sb.auth.getSession()); }
   if(data&&data.session) await enter(data.session.user);
@@ -290,20 +330,22 @@ function initFilters(){
   fillSel('f-rep',[...new Set(ROWS.map(r=>r.rep))].sort());
   fillSel('f-product',[...new Set(ROWS.map(r=>r.product))].sort());
   fillSel('f-status',[...new Set(ROWS.map(r=>r.status))]);
+  fillSel('f-region',[...new Set(ROWS.map(r=>r.region))].sort());
 }
 function fillSel(id,arr){ const s=document.getElementById(id); const first=s.options[0].outerHTML; s.innerHTML=first+arr.filter(Boolean).map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join(''); }
 function setMonth(m){ if(m==='all'){F.months.clear();} else { m=+m; if(F.months.has(m))F.months.delete(m); else F.months.add(m); }
   document.querySelectorAll('#mchips .wt-tab').forEach(b=>{ const d=b.dataset.m; b.classList.toggle('on', d==='all'?F.months.size===0:F.months.has(+d)); });
   applyF();
 }
-function applyF(){ F.channel=document.getElementById('f-channel').value; F.rep=document.getElementById('f-rep').value; F.product=document.getElementById('f-product').value; F.status=document.getElementById('f-status').value; F.search=(document.getElementById('f-search').value||'').trim().toLowerCase(); render(); }
-function resetF(){ F={months:new Set(),channel:'',rep:'',product:'',status:'',search:''}; ['f-channel','f-rep','f-product','f-status','f-search'].forEach(id=>document.getElementById(id).value=''); document.querySelectorAll('#mchips .wt-tab').forEach(b=>b.classList.toggle('on',b.dataset.m==='all')); render(); }
+function applyF(){ F.channel=document.getElementById('f-channel').value; F.rep=document.getElementById('f-rep').value; F.product=document.getElementById('f-product').value; F.status=document.getElementById('f-status').value; F.region=document.getElementById('f-region').value; F.search=(document.getElementById('f-search').value||'').trim().toLowerCase(); render(); }
+function resetF(){ F={months:new Set(),channel:'',rep:'',product:'',status:'',region:'',search:''}; ['f-channel','f-rep','f-product','f-status','f-region','f-search'].forEach(id=>document.getElementById(id).value=''); document.querySelectorAll('#mchips .wt-tab').forEach(b=>b.classList.toggle('on',b.dataset.m==='all')); render(); }
 function filtered(){ return ROWS.filter(r=>{
   if(F.months.size&&!F.months.has(r._month))return false;
   if(F.channel&&r.channel!==F.channel)return false;
   if(F.rep&&r.rep!==F.rep)return false;
   if(F.product&&r.product!==F.product)return false;
   if(F.status&&r.status!==F.status)return false;
+  if(F.region&&(r.region||'미분류')!==F.region)return false;
   if(F.search){ const s=(r.cust+' '+r.product+' '+r.rep+' '+r.ceo).toLowerCase(); if(s.indexOf(F.search)<0)return false; }
   return true; });
 }
@@ -311,13 +353,15 @@ function filtered(){ return ROWS.filter(r=>{
 /* ── 네비/라우팅 ── */
 const VIEWS=[
  ['overview','bi-bar-chart-line-fill','종합 현황','국내 거래처별 계약체결 관리'],
+ ['delivery','bi-truck','납품 확인','수주 대비 납품 · 지연·지방 추적'],
+ ['oligio','bi-ticket-perforated','Oligio 쿠폰','납품완료 → 적립금/쿠폰 지급 관리'],
  ['rep','bi-person-badge','담당자별 실적','담당자·대리점별 계약/매출'],
  ['product','bi-box-seam','제품별 매출','장비 제품별 계약 현황'],
  ['channel','bi-signpost-split','채널·지역','본사/대리점/딜러 · 지역·진료과'],
  ['pay','bi-credit-card-2-front','수금·파이낸싱','수금방법·캐피탈사·원텍몰'],
- ['list','bi-card-list','계약 리스트','전체 계약 검색·조회'],
- ['pending','bi-hourglass-split','미납·파이프라인','미납·납품/세금계산서 대기']];
-function buildNav(){ document.getElementById('nav').innerHTML='<div class="nav-label">경영 현황</div>'+VIEWS.map(v=>'<div class="nav-link" data-v="'+v[0]+'" onclick="go(\''+v[0]+'\')"><i class="bi '+v[1]+'"></i>'+v[2]+'</div>').join(''); }
+ ['list','bi-card-list','계약 리스트','전체 계약 검색·조회']];
+const NAVGROUPS=[['납품 · 운영',['overview','delivery','oligio']],['영업 분석',['rep','product','channel','pay','list']]];
+function buildNav(){ document.getElementById('nav').innerHTML=NAVGROUPS.map(g=>'<div class="nav-label">'+g[0]+'</div>'+g[1].map(k=>{const v=VIEWS.find(x=>x[0]===k);return '<div class="nav-link" data-v="'+v[0]+'" onclick="go(\''+v[0]+'\')"><i class="bi '+v[1]+'"></i>'+v[2]+'</div>';}).join('')).join(''); }
 function go(v){ location.hash='#'+v; }
 function route(){ const v=(location.hash||'').replace(/^#/,'')||'overview'; curView=VIEWS.some(x=>x[0]===v)?v:'overview'; render(); document.getElementById('sidebar').classList.remove('open'); }
 window.addEventListener('hashchange',route);
@@ -331,7 +375,7 @@ function render(){
   const R=filtered();
   document.getElementById('fcount').innerHTML='<b>'+R.length+'</b>건 · 매출 <b>'+won2p(sum(R,'krw'))+'</b>';
   destroyCharts();
-  ({overview:vOverview,rep:vRep,product:vProduct,channel:vChannel,pay:vPay,list:vList,pending:vPending}[curView])(R);
+  ({overview:vOverview,delivery:vDelivery,oligio:vOligio,rep:vRep,product:vProduct,channel:vChannel,pay:vPay,list:vList}[curView])(R);
 }
 function destroyCharts(){ _charts.forEach(c=>{try{c.destroy();}catch(e){}}); _charts=[]; }
 function mkChart(id,cfg){ const el=document.getElementById(id); if(!el)return; _charts.push(new Chart(el,cfg)); }
@@ -355,7 +399,7 @@ function vOverview(R){
     fact('완료율',pctv(done,n),'%',done+' / '+n+'건 완료')+
     fact('월평균 매출',eok(mset.length?krw/mset.length:krw).toFixed(1),'억',(mset.length||0)+'개월 기준')+
     fact('대리점 비중',pctv(daeri,krw),'%',won1(daeri)+' · 채널 최대')+
-    fact('미납',eok(sum(unpaid,'krw')).toFixed(1),'억',unpaid.length+'건 관리 필요',unpaid.length?'rd':'',"go('pending')")+
+    fact('미납',eok(sum(unpaid,'krw')).toFixed(1),'억',unpaid.length+'건 관리 필요',unpaid.length?'rd':'',"document.getElementById('f-status').value='미납';applyF();go('list')")+
   '</div>';
   h+='<div class="wt-grid g-32" style="margin-bottom:16px">'+
     '<div class="wt-card">'+st('bi-graph-up','월별 매출 추이','원화환산 · 막대 클릭 시 해당 월')+'<canvas id="ch-month"></canvas></div>'+
@@ -463,21 +507,48 @@ function vList(R){
 function sortList(k){ if(_sortKey===k)_sortDir*=-1; else{_sortKey=k;_sortDir=1;} render(); }
 function stChip(s){ const m={'완료':['#15803d','#ecfdf3'],'미납':['#dc2626','#fef2f2'],'납품':['#d97706','#fffbeb']}[s]||['#64748b','#f1f5f9']; return '<span class="badge-st" style="color:'+m[0]+';background:'+m[1]+'">'+esc(s)+'</span>'; }
 
-/* ── 미납·파이프라인 ── */
-function vPending(R){
-  const unpaid=R.filter(r=>r.status==='미납'||r.status==='납품');
-  const noTax=R.filter(r=>!r.dTax); const noDeliver=R.filter(r=>!r.dDelivered);
+/* ── 납품 확인 ── */
+function vDelivery(R){
+  const undel=R.filter(r=>!has(r.dDelivered)), done=R.length-undel.length, T=today0();
+  const overdue=undel.filter(r=>{const d=pd(r.dDeliverDue);return d&&d<T;});
+  const upcoming=undel.filter(r=>{const d=pd(r.dDeliverDue);return d&&d>=T;});
+  const noDate=undel.filter(r=>!has(r.dDeliverDue));
+  const sorted=undel.slice().sort((a,b)=>{const da=pd(a.dDeliverDue),db=pd(b.dDeliverDue);if(!da&&!db)return 0;if(!da)return 1;if(!db)return -1;return da-db;});
   let h='<div class="wt-band" style="padding:16px 22px">'+
-    '<div class="wt-hero" style="flex:.9"><span class="l">미납·미완 계약</span><b'+(unpaid.length?' class="rd"':'')+'>'+unpaid.length+'<span class="u">건</span></b><span class="s">'+won2p(sum(unpaid,'krw'))+' 대상</span></div>'+
-    fact('세금계산서 미발행',noTax.length,'건',won1(sum(noTax,'krw')))+
-    fact('납품 미완료',noDeliver.length,'건',won1(sum(noDeliver,'krw')))+
-    fact('전체 대비',pctv(unpaid.length,R.length),'%','미납·미완 비율')+
+    '<div class="wt-hero" style="flex:.9"><span class="l">미납품 <span class="mut" style="font-size:10px;font-weight:500">· 수주-미납품</span></span><b'+(overdue.length?' class="rd"':'')+'>'+undel.length+'<span class="u">건</span></b><span class="s">납품완료 '+done+' / 전체 '+R.length+'건</span></div>'+
+    fact('납품예정일 경과',overdue.length,'건','지연 — 확인 필요',overdue.length?'rd':'')+
+    fact('예정일 도래 전',upcoming.length,'건','정상 대기')+
+    fact('예정일 미정',noDate.length,'건','일정 불명확',noDate.length?'rd':'')+
   '</div>';
-  h+='<div class="wt-card">'+st('bi-hourglass-split','미납·미완 관리 대상','행 클릭 상세')+
-    (unpaid.length?'<div class="scroll"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th>금액</th><th class="l">담당자</th><th>매출월</th><th class="l">상태</th><th class="l">세금계산서</th></tr></thead><tbody>'+
-    unpaid.map(c=>'<tr onclick="detail('+c.no+')"><td class="rk">'+c.no+'</td><td class="l nm">'+esc(c.cust)+'</td><td class="l">'+esc(c.product)+'</td><td><b>'+fmt(c.krw)+'</b></td><td class="l">'+esc(c.rep)+'</td><td>'+(c.saleMonth?c.saleMonth+'월':'-')+'</td><td class="l">'+stChip(c.status)+'</td><td class="l tx2">'+esc(c.dTax||'미발행')+'</td></tr>').join('')+
-    '</tbody></table></div>':'<div class="empty"><i class="bi bi-check-circle" style="color:var(--green)"></i> 미납·미완 계약이 없습니다</div>')+'</div>';
-  document.getElementById('view-pending').innerHTML=h;
+  h+='<div class="wt-card">'+st('bi-truck','납품 대기 목록','납품예정일 순 · 지연 붉게 · 지역 필터로 지방 확인 · 행 클릭 상세')+
+    (sorted.length?'<div class="scroll"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">지역</th><th>납품예정</th><th>D-day</th><th class="l">담당</th><th class="l">출고예정</th></tr></thead><tbody>'+
+    sorted.map(r=>{const d=pd(r.dDeliverDue);const dd=d?Math.round((d-T)/864e5):null;const late=dd!==null&&dd<0;const lst=late?' style="color:var(--red);font-weight:700"':'';
+      return '<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.region||'-')+'</td><td'+lst+'>'+esc(r.dDeliverDue||'미정')+'</td><td'+lst+'>'+(dd===null?'-':(dd<0?(-dd)+'일 지연':dd===0?'D-day':'D-'+dd))+'</td><td class="l">'+esc(r.rep)+'</td><td class="l tx2">'+esc(r.dShipDue||'-')+'</td></tr>';}).join('')+
+    '</tbody></table></div>':'<div class="empty"><i class="bi bi-check-circle" style="color:var(--green)"></i> 조건에 맞는 미납품 계약이 없습니다</div>')+'</div>';
+  document.getElementById('view-delivery').innerHTML=h;
+}
+
+/* ── Oligio 쿠폰 ── */
+function vOligio(R){
+  const oli=R.filter(r=>isOli(r.product));
+  const payable=oli.filter(r=>has(r.dDelivered)&&!has(r.mall));
+  const paid=oli.filter(r=>has(r.dDelivered)&&has(r.mall));
+  const waiting=oli.filter(r=>!has(r.dDelivered));
+  let h='<div class="wt-band" style="padding:16px 22px">'+
+    '<div class="wt-hero" style="flex:1.1"><span class="l">쿠폰 지급 대상 <span class="mut" style="font-size:10px;font-weight:500">· 납품완료·적립 미기재</span></span><b style="color:var(--amber)">'+payable.length+'<span class="u">건</span></b><span class="s">납품 완료 → 적립금/쿠폰 지급 가능</span></div>'+
+    fact('지급 완료',paid.length,'건','적립금/쿠폰 기재됨','gr')+
+    fact('지급 대기',waiting.length,'건','미납품 — 납품 후 가능')+
+    fact('Oligio 시리즈',oli.length,'건','전체의 '+pctv(oli.length,R.length)+'%')+
+  '</div>';
+  h+='<div class="wt-card" style="margin-bottom:16px">'+st('bi-ticket-perforated','쿠폰 지급 대상','납품완료·적립 미기재 · 확인 후 지급 · 행 클릭 상세')+
+    (payable.length?'<div class="scroll"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">지역</th><th>납품일</th><th class="l">담당</th></tr></thead><tbody>'+
+    payable.map(r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.region||'-')+'</td><td>'+esc(r.dDelivered||'-')+'</td><td class="l">'+esc(r.rep)+'</td></tr>').join('')+
+    '</tbody></table></div>':'<div class="empty"><i class="bi bi-check-circle" style="color:var(--green)"></i> 지급 대상이 없습니다</div>')+'</div>';
+  h+='<div class="wt-card">'+st('bi-hourglass-split','지급 대기 (미납품)','납품 완료 시 지급 가능')+
+    (waiting.length?'<div class="scroll"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">지역</th><th>납품예정</th><th class="l">담당</th></tr></thead><tbody>'+
+    waiting.map(r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.region||'-')+'</td><td>'+esc(r.dDeliverDue||'미정')+'</td><td class="l">'+esc(r.rep)+'</td></tr>').join('')+
+    '</tbody></table></div>':'<div class="empty">대기 건이 없습니다</div>')+'</div>';
+  document.getElementById('view-oligio').innerHTML=h;
 }
 
 /* ── 상세 모달 ── */
