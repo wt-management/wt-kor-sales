@@ -417,7 +417,9 @@ async function changePw(){ const np=prompt('새 비밀번호 (6자 이상)'); if
 async function loadData(){
   try{ const {data,error}=await _sb.from('kor_contracts').select('id,no,data,updated_at').order('no',{ascending:true});
     if(!error&&data&&data.length){
-      ROWS=data.map(r=>Object.assign({},r.data,{no:r.no,_id:r.id,_month:(r.data&&r.data.saleMonth)||0})).filter(r=>!r._deleted); ROWS.forEach(_derCoupon);
+      const all=data.map(r=>Object.assign({},r.data,{no:r.no,_id:r.id,_month:(r.data&&r.data.saleMonth)||0}));
+      window.__trash=all.filter(r=>r._deleted);
+      ROWS=all.filter(r=>!r._deleted); ROWS.forEach(_derCoupon);
       const mx=data.reduce((m,r)=>(r.updated_at&&r.updated_at>m)?r.updated_at:m,'');
       DATA={contracts:ROWS,updatedAt:mx?mx.slice(0,10).replace(/-/g,'.'):''};
       const ae=document.getElementById('asof'); if(ae)ae.innerHTML=DATA.updatedAt?('최근 수정 '+esc(DATA.updatedAt)):'실시간 관리';
@@ -526,143 +528,10 @@ function twoColTbl(rows,head,rowFn,maxH){ if(!rows.length)return '<div class="em
   const t=a=>'<table class="wt-tbl"><thead><tr>'+head+'</tr></thead><tbody>'+a.map(rowFn).join('')+'</tbody></table>';
   return '<div class="scroll" style="max-height:'+(maxH||64)+'vh"><div class="wt-grid g-2" style="align-items:start;gap:0 26px"><div>'+t(L)+'</div><div>'+(R2.length?t(R2):'')+'</div></div></div>'; }
 
-/* ── 대시보드(운영 요약) ── */
-function vDash(R){
-  const T=today0();
-  const undel=R.filter(r=>!has(r.dDelivered));
-  const overdue=undel.filter(r=>{const d=pd(r.dDeliverDue);return d&&d<T;});
-  const week=undel.filter(r=>{const d=pd(r.dDeliverDue);return d&&d>=T&&(d-T)/864e5<=7;});
-  const oliPay=R.filter(r=>isCoupon(r.product)&&has(r.dDelivered)&&!has(r.couponDate));
-  const noTax=R.filter(r=>!has(r.dTax));
-  const c=window.__chg;
-  const chgN=c?(c.neo.length+c.del.length+c.can.length):0;
-  window.__DS={undel:undel,week:week,noTax:noTax,oliPay:oliPay};
-  let h='<div class="tx2" style="font-size:11.5px;margin:0 0 12px">기준일 '+esc(DATA.updatedAt||'-')+' · 총 '+ROWS.length+'건</div><div class="wt-band">'+
-    '<div class="wt-hero" style="cursor:pointer" onclick="go(\'delivery\')"><span class="l">미납품 <span class="mut" style="font-size:10px;font-weight:500">· 수주-미납품</span></span><b'+(overdue.length?' class="rd"':'')+'>'+undel.length+'<span class="u">건</span></b><span class="s">'+(overdue.length?'예정일 경과 '+overdue.length+'건 · ':'')+'납품완료 '+(R.length-undel.length)+'/'+R.length+' · 상세 →</span></div>'+
-    fact('쿠폰·적립금 지급대상',oliPay.length,'건','납품완료·미지급','am',"go('oligio')")+
-    fact('이번주 납품예정',week.length,'건','D-7 이내','',"drillKey('week')")+
-    fact('세금계산서 미발행',noTax.length,'건',won1(noTax.reduce((s,x)=>s+(x.krw||0),0)),'',"drillKey('noTax')")+
-    fact('지난 방문 이후 변동',chgN,'건',chgN?'알림 확인':'변동 없음',chgN?'am':'',chgN?"showChg()":'')+
-  '</div>';
-  // 해당월 계약 리스트 (거래처·제품·납품예정·담당 + 납품/지급 체크)
-  const monthsAll=[...new Set(R.map(r=>r.saleMonth).filter(Boolean))].sort((a,b)=>a-b);
-  const selM=(window.__dashMonth&&monthsAll.indexOf(window.__dashMonth)>=0)?window.__dashMonth:(monthsAll[monthsAll.length-1]||0);
-  const monRows=R.filter(r=>r.saleMonth===selM).sort((a,b)=>a.no-b.no);
-  h+='<div class="wt-grid g-2" style="align-items:start">';
-  h+='<div class="wt-card"><div class="wt-st"><i class="bi bi-calendar-check"></i>월별 계약'+
-    '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+monthsAll.map(m=>'<button class="wt-tab'+(m===selM?' on':'')+'" style="padding:3px 11px" onclick="dashMonth('+m+')">'+m+'월</button>').join('')+'</span>'+
-    '<span class="hint">'+monRows.length+'건 · 팀장 입력 시 즉시 반영</span></div>'+
-    (monRows.length?'<div class="scroll" style="max-height:520px"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">사업자번호</th><th class="l">제품</th><th>납품일</th><th class="l">담당</th><th>납품</th><th>지급</th></tr></thead><tbody>'+
-    monRows.map(r=>{const del=has(r.dDelivered),cp=isCoupon(r.product),paid=has(r.couponDate);
-      return '<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l tx2">'+esc(r.biznum||'-')+'</td><td class="l">'+esc(r.product)+'</td><td>'+esc(r.dDelivered||'-')+'</td><td class="l">'+esc(r.rep)+'</td><td>'+(del?'<i class="bi bi-check-circle-fill" style="color:var(--green)"></i>':'<i class="bi bi-circle" style="color:#cbd5e1"></i>')+'</td><td>'+(cp?(paid?'<i class="bi bi-check-circle-fill" style="color:var(--green)"></i>':'<i class="bi bi-exclamation-circle-fill" style="color:var(--amber)"></i>'):'<span class="mut">-</span>')+'</td></tr>';}).join('')+
-    '</tbody></table></div>':'<div class="empty">해당 월 계약이 없습니다</div>')+'</div>';
-  // 납품 임박 (지연/예정) — 우측 절반
-  const soon=undel.filter(r=>pd(r.dDeliverDue)).sort((a,b)=>pd(a.dDeliverDue)-pd(b.dDeliverDue)).slice(0,15);
-  h+='<div class="wt-card">'+st('bi-truck','납품 임박 / 지연','납품예정일 순 · 지연 붉게')+
-    (soon.length?'<div class="scroll" style="max-height:520px"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">지역</th><th>납품예정</th><th class="l">담당</th></tr></thead><tbody>'+
-    soon.map(r=>{const late=pd(r.dDeliverDue)<T,ls=late?' style="color:var(--red);font-weight:700"':'';
-      return '<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.region||'-')+'</td><td'+ls+'>'+esc(r.dDeliverDue)+'</td><td class="l">'+esc(r.rep)+'</td></tr>';}).join('')+
-    '</tbody></table></div>':'<div class="empty">임박한 납품이 없습니다</div>')+
-    '<div style="text-align:right;margin-top:10px"><span class="wt-tab" onclick="go(\'delivery\')">납품 확인 전체 <i class="bi bi-arrow-right"></i></span></div></div>';
-  h+='</div>';
-  document.getElementById('view-dash').innerHTML=h;
-}
-
-/* ── 납품 확인 ── */
-function vDelivery(R){
-  const undel=R.filter(r=>!has(r.dDelivered)), done=R.length-undel.length, T=today0();
-  const overdue=undel.filter(r=>{const d=pd(r.dDeliverDue);return d&&d<T;});
-  const upcoming=undel.filter(r=>{const d=pd(r.dDeliverDue);return d&&d>=T;});
-  const noDate=undel.filter(r=>!has(r.dDeliverDue));
-  const sorted=undel.slice().sort((a,b)=>{const da=pd(a.dDeliverDue),db=pd(b.dDeliverDue);if(!da&&!db)return 0;if(!da)return 1;if(!db)return -1;return da-db;});
-  let h='<div class="wt-band" style="padding:16px 22px">'+
-    '<div class="wt-hero"><span class="l">미납품 <span class="mut" style="font-size:10px;font-weight:500">· 수주-미납품</span></span><b'+(overdue.length?' class="rd"':'')+'>'+undel.length+'<span class="u">건</span></b><span class="s">납품완료 '+done+' / 전체 '+R.length+'건</span></div>'+
-    fact('납품예정일 경과',overdue.length,'건','지연 — 확인 필요',overdue.length?'rd':'')+
-    fact('예정일 도래 전',upcoming.length,'건','정상 대기')+
-    fact('예정일 미정',noDate.length,'건','일정 불명확',noDate.length?'rd':'')+
-  '</div>';
-  h+='<div class="wt-card">'+st('bi-truck','납품 대기 목록','납품예정일 순 · 지연 붉게 · 좌→우 순서 · 행 클릭 상세')+
-    (sorted.length?twoColTbl(sorted,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">지역</th><th>납품예정</th><th class="l">담당</th>',
-      r=>{const d=pd(r.dDeliverDue);const late=d&&d<T;const lst=late?' style="color:var(--red);font-weight:700"':'';
-      return '<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.region||'-')+'</td><td'+lst+'>'+esc(r.dDeliverDue||'미정')+'</td><td class="l">'+esc(r.rep)+'</td></tr>';})
-    :'<div class="empty"><i class="bi bi-check-circle" style="color:var(--green)"></i> 조건에 맞는 미납품 계약이 없습니다</div>')+'</div>';
-  document.getElementById('view-delivery').innerHTML=h;
-}
-
-/* ── 쿠폰·적립금 ── */
-function vOligio(R){
-  const cp=R.filter(r=>isCoupon(r.product));
-  const payable=cp.filter(r=>has(r.dDelivered)&&!has(r.couponDate));
-  const paid=cp.filter(r=>has(r.dDelivered)&&has(r.couponDate));
-  const waiting=cp.filter(r=>!has(r.dDelivered));
-  const byType=t=>cp.filter(r=>couponType(r.product)===t).length;
-  window.__CP={payable:payable,paid:paid,waiting:waiting};
-  let h='<div class="wt-band" style="padding:16px 22px">'+
-    '<div class="wt-hero" style="flex:1.1;cursor:pointer" onclick="drillCoupon(\'payable\')"><span class="l">지급 대상 <span class="mut" style="font-size:10px;font-weight:500">· 납품완료·미지급</span></span><b class="rd" style="color:var(--amber)">'+payable.length+'<span class="u">건</span></b><span class="s">누락 방지 · 상세 →</span></div>'+
-    fact('지급 완료',paid.length,'건','지급일 기재됨','gr',"drillCoupon('paid')")+
-    fact('지급 대기',waiting.length,'건','미납품 — 납품 후','',"drillCoupon('waiting')")+
-    fact('적립금/쿠폰/카트리지',byType('적립금')+' / '+byType('쿠폰')+' / '+byType('카트리지 쿠폰'),'','Oligio / X·Kiss / Tightan')+
-  '</div>';
-  window.__coupSel=new Set();
-  const ctypes=['전체','적립금','쿠폰','카트리지 쿠폰'];
-  const filt=_coupType==='전체'?payable:payable.filter(r=>couponType(r.product)===_coupType);
-  h+='<div class="wt-card" style="margin-bottom:16px"><div class="wt-st"><i class="bi bi-exclamation-circle"></i>지급 대상 (납품완료·미지급)'+
-    '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+ctypes.map(t=>{const n=t==='전체'?payable.length:payable.filter(r=>couponType(r.product)===t).length;return '<button class="wt-tab'+(t===_coupType?' on':'')+'" style="padding:3px 11px" onclick="coupType(\''+t+'\')">'+t+' '+n+'</button>';}).join('')+'</span>'+
-    '<span class="hint">체크 → 일괄 지급 · [지급]=개별</span></div>'+
-    '<div id="bulkbar"></div>'+
-    (filt.length?'<div style="margin:0 0 9px"><label style="font-size:12px;color:var(--text-2);cursor:pointer;user-select:none"><input type="checkbox" id="selall" onclick="coupSelAll(this.checked)"> 이 목록 전체 선택 ('+filt.length+'건)</label></div>'+
-    '<div class="scroll"><div class="paygrid">'+
-    filt.map(r=>'<div class="paycard"><div class="pc-top"><label style="display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer"><input type="checkbox" class="coupchk" data-no="'+r.no+'" onclick="coupSel('+r.no+',this.checked)"><span class="pc-cust"><span class="mut" style="font-weight:600">#'+r.no+'</span> '+esc(r.cust)+'</span></label><button class="btn btn-sm btn-warning pc-btn" onclick="payCoupon('+r.no+')">지급</button></div><div class="pc-meta" style="cursor:pointer" onclick="detail('+r.no+')">'+esc(r.product)+' <span class="badge-st" style="color:#2455c4;background:#eef4fd">'+couponType(r.product)+'</span></div><div class="pc-sub" style="cursor:pointer" onclick="detail('+r.no+')">납품 '+esc(r.dDelivered||'-')+' · '+esc(r.rep)+' · <span style="color:var(--amber);font-weight:700">미지급</span></div></div>').join('')+
-    '</div></div>':'<div class="empty"><i class="bi bi-check-circle" style="color:var(--green)"></i> 미지급 건이 없습니다 (누락 없음)</div>')+'</div>';
-  h+='<div class="wt-grid g-2">'+
-    '<div class="wt-card">'+st('bi-check2-circle','지급 완료','납품일 · 지급일 · 수량')+
-    (paid.length?'<div class="scroll"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th>납품일</th><th>지급일 · 수량</th></tr></thead><tbody>'+
-    paid.map(r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td>'+esc(r.dDelivered||'-')+'</td><td><b>'+esc(r.couponDate)+'</b>'+(r.couponQty?' <span class="mut">'+esc(r.couponQty)+'</span>':'')+'</td></tr>').join('')+
-    '</tbody></table></div>':'<div class="empty">없음</div>')+'</div>'+
-    '<div class="wt-card">'+st('bi-hourglass-split','지급 대기 (미납품)','납품 완료 시 가능')+
-    (waiting.length?'<div class="scroll"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th>납품예정</th></tr></thead><tbody>'+
-    waiting.map(r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td>'+esc(r.dDeliverDue||'미정')+'</td></tr>').join('')+
-    '</tbody></table></div>':'<div class="empty">없음</div>')+'</div>'+
-  '</div>';
-  document.getElementById('view-oligio').innerHTML=h;
-}
-function dashMonth(m){ window.__dashMonth=m; render(); }
-function drillCoupon(k){ const s=window.__CP||{}; const M={payable:['지급 대상 (납품완료·미지급)','bi-exclamation-circle',s.payable,'납품일','dDelivered'],paid:['지급 완료','bi-check2-circle',s.paid,'지급일','couponDate'],waiting:['지급 대기 (미납품)','bi-hourglass-split',s.waiting,'납품예정','dDeliverDue']}[k]; if(M)drillList(M[0],M[1],M[2]||[],M[3],M[4]); }
 /* ── 판매수수료 (대리점/딜러, 엑셀 수수료 지급 필드 기반) ── */
 function commPaid(r){ return has(r.commission)&&String(r.commission).trim()!=='-'; }
-function vComm(R){
-  const cc=R.filter(r=>r.channel==='대리점'||r.channel==='딜러');
-  const unpaid=cc.filter(r=>!commPaid(r)), paid=cc.filter(commPaid);
-  const daeri=cc.filter(r=>r.channel==='대리점').length, dealer=cc.filter(r=>r.channel==='딜러').length;
-  window.__CM={unpaid:unpaid,paid:paid};
-  let h='<div class="wt-band" style="padding:16px 22px">'+
-    '<div class="wt-hero" style="flex:1.1;cursor:pointer" onclick="drillComm(\'unpaid\')"><span class="l">수수료 미지급 <span class="mut" style="font-size:10px;font-weight:500">· 대리점/딜러</span></span><b class="rd" style="color:var(--amber)">'+unpaid.length+'<span class="u">건</span></b><span class="s">지급 참조코드 미기재 · 상세 →</span></div>'+
-    fact('지급 완료',paid.length,'건','참조코드 기재됨','gr',"drillComm('paid')")+
-    fact('대리점 / 딜러',daeri+' / '+dealer,'건','수수료 대상 채널')+
-    fact('대상 합계',cc.length,'건','본사 제외 · 전체의 '+pctv(cc.length,R.length)+'%')+
-  '</div>';
-  const tbl=(rows,title,icon,mb)=>'<div class="wt-card"'+(mb?' style="margin-bottom:16px"':'')+'>'+st(icon,title,rows.length+'건 · 좌→우 순서 · 행 클릭 상세(수수료 참조 편집)')+
-    twoColTbl(rows,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">채널</th><th class="l">담당</th><th class="l">수수료 참조</th>',
-      r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.channel)+'</td><td class="l">'+esc(r.rep)+'</td><td class="l">'+(commPaid(r)?'<b>'+esc(r.commission)+'</b>':'<span style="color:var(--amber);font-weight:700">미지급</span>')+'</td></tr>')+'</div>';
-  h+=tbl(unpaid,'수수료 미지급 (대상)','bi-exclamation-circle',true)+tbl(paid,'수수료 지급 완료','bi-check2-circle',false);
-  document.getElementById('view-comm').innerHTML=h;
-}
-function drillComm(k){ const s=window.__CM||{}; const M={unpaid:['수수료 미지급','bi-exclamation-circle',s.unpaid],paid:['수수료 지급 완료','bi-check2-circle',s.paid]}[k]; if(M)drillList(M[0],M[1],M[2]||[],'채널','channel'); }
-
 /* ── 계약 리스트 ── */
 let _sortKey='no', _sortDir=1;
-function vList(R){
-  R=R.slice().sort((a,b)=>{ let x=a[_sortKey],y=b[_sortKey]; if(typeof x==='string'||typeof y==='string'){x=x||'';y=y||'';return _sortDir*String(x).localeCompare(String(y));} return _sortDir*((x||0)-(y||0)); });
-  const cols=[['no','#','rk'],['cust','거래처','l'],['product','제품','l'],['rep','담당자','l'],['channel','채널','l'],['region','지역','l'],['saleMonth','매출월',''],['status','상태','l'],['dDelivered','납품일','l']];
-  let h='<div class="wt-card">'+st('bi-card-list','계약 리스트','헤더 클릭 정렬 · 행 클릭 상세 · '+R.length+'건')+
-    '<div style="text-align:right;margin:-40px 0 8px"><button class="wt-tab" onclick="exportCsv()"><i class="bi bi-download"></i>CSV</button></div>'+
-    '<div class="scroll"><table class="wt-tbl"><thead><tr>'+
-    cols.map(c=>'<th class="'+c[2]+'" onclick="sortList(\''+c[0]+'\')">'+c[1]+(_sortKey===c[0]?(_sortDir>0?' ▲':' ▼'):'')+'</th>').join('')+
-    '</tr></thead><tbody>'+
-    (R.length?R.map(c=>'<tr onclick="detail('+c.no+')"><td class="rk">'+c.no+'</td><td class="l nm">'+esc(c.cust)+'</td><td class="l">'+esc(c.product)+'</td><td class="l">'+esc(c.rep)+'</td><td class="l">'+esc(c.channel)+'</td><td class="l">'+esc(c.region||'-')+'</td><td>'+(c.saleMonth?c.saleMonth+'월':'-')+'</td><td class="l">'+stChip(c.status)+'</td><td class="l tx2">'+esc(c.dDelivered||'-')+'</td></tr>').join(''):'<tr><td colspan="9" class="empty">해당 조건의 계약이 없습니다</td></tr>')+
-    '</tbody></table></div></div>';
-  document.getElementById('view-list').innerHTML=h;
-}
 function sortList(k){ if(_sortKey===k)_sortDir*=-1; else{_sortKey=k;_sortDir=1;} render(); }
 
 /* ── 메시지 (팀 보드) ── */
@@ -684,20 +553,6 @@ async function postBoard(){ const el=document.getElementById('board-in'); const 
   const ok=await postMsg('board',b); el.disabled=false; if(!ok){ toast(BOARD_OK?'등록 실패':'메시지 기능 준비 필요'); return; } el.value=''; await loadBoard(); vMessages(filtered()); toast('등록되었습니다'); }
 async function postMsg(scope,body){ try{ const {error}=await _sb.from('kor_messages').insert({scope:scope,author:MENAME,body:body.slice(0,2000)}); return !error; }catch(e){ return false; } }
 async function delMsg(id){ if(!confirm('삭제할까요?'))return; try{ await _sb.from('kor_messages').delete().eq('id',id); }catch(e){} await loadBoard(); if(curView==='messages')vMessages(filtered()); }
-
-/* ── KPI 상세내역 조회(드릴다운) ── */
-function drillList(title,icon,rows,dateLabel,dateField){ window.__dno=null;
-  const body=rows.length?'<div class="scroll" style="max-height:62vh"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">지역</th><th class="l">담당</th>'+(dateField?'<th>'+dateLabel+'</th>':'')+'</tr></thead><tbody>'+
-    rows.map(r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.region||'-')+'</td><td class="l">'+esc(r.rep)+'</td>'+(dateField?'<td>'+esc(r[dateField]||'-')+'</td>':'')+'</tr>').join('')+'</tbody></table></div>':'<div class="empty">해당 건이 없습니다</div>';
-  document.getElementById('mbox').innerHTML='<div class="mhd"><div><h3><i class="bi '+icon+'" style="color:var(--blue);margin-right:7px"></i>'+esc(title)+' <span class="tx2" style="font-size:13px;font-weight:600">'+rows.length+'건</span></h3><div class="tx2" style="font-size:12px;margin-top:3px">행 클릭 시 계약 상세</div></div><button class="x" onclick="closeModal()"><i class="bi bi-x-lg"></i></button></div><div class="mbody">'+body+'</div>';
-  document.getElementById('modal').classList.add('on');
-}
-function drillKey(k){ const s=window.__DS||{}; const M={
-  week:['이번주 납품예정','bi-truck',s.week,'납품예정','dDeliverDue'],
-  noTax:['세금계산서 미발행','bi-receipt',s.noTax,'납품일','dDelivered'],
-  undel:['미납품','bi-truck',s.undel,'납품예정','dDeliverDue'],
-  oliPay:['쿠폰·적립금 지급대상','bi-ticket-perforated',s.oliPay,'납품일','dDelivered']
-}[k]; if(M)drillList(M[0],M[1],M[2]||[],M[3],M[4]); }
 
 /* ── 상세 모달 (+ 계약별 메모) ── */
 function detail(no,keepCtx){
@@ -726,6 +581,7 @@ function detail(no,keepCtx){
   ab.innerHTML='<button class="btn btn-sm btn-primary" onclick="editContract('+no+')"><i class="bi bi-pencil"></i> 편집</button>'+
     (!has(c.dDelivered)?'<button class="btn btn-sm btn-success" onclick="quickDeliver('+no+')"><i class="bi bi-check2-circle"></i> 납품완료 처리</button>':'')+
     (isCoupon(c.product)&&has(c.dDelivered)&&!has(c.couponDate)?'<button class="btn btn-sm btn-warning" onclick="payCoupon('+no+')"><i class="bi bi-ticket-perforated"></i> 지급 기록</button>':'')+
+    (!has(c.payDate)?'<button class="btn btn-sm btn-outline-primary" onclick="quickPayDate('+no+')"><i class="bi bi-credit-card-2-front"></i> 수금일</button>':'')+
     '<button class="btn btn-sm btn-outline-danger" style="margin-left:auto" onclick="deleteContract('+no+')" title="삭제"><i class="bi bi-trash"></i></button>';
   const mb=document.querySelector('#mbox .mbody'); mb.insertBefore(ab,mb.firstChild);
   renderMemo(no);
@@ -898,7 +754,7 @@ function vLedger(R){
   R=R.slice().sort((a,b)=>{ let x=a[_sortKey],y=b[_sortKey]; if(typeof x==='string'||typeof y==='string'){x=x||'';y=y||'';return _sortDir*String(x).localeCompare(String(y));} return _sortDir*((x||0)-(y||0)); });
   const cols=[['no','#','rk'],['cust','거래처','l'],['biznum','사업자번호','l'],['product','제품','l'],['rep','담당자','l'],['channel','채널','l'],['saleMonth','매출월',''],['status','상태','l'],['_stage','진행','l']];
   let h='<div class="wt-card">'+st('bi-journal-text','계약 대장','헤더 클릭 정렬 · 행 클릭 상세 · '+R.length+'건')+
-    '<div style="text-align:right;margin:-40px 0 8px;display:flex;gap:8px;justify-content:flex-end"><button class="wt-tab" onclick="newContract()"><i class="bi bi-plus-lg"></i>신규</button><button class="wt-tab" onclick="exportCsv()"><i class="bi bi-download"></i>CSV</button></div>'+
+    '<div style="text-align:right;margin:-40px 0 8px;display:flex;gap:8px;justify-content:flex-end"><button class="wt-tab" onclick="newContract()"><i class="bi bi-plus-lg"></i>신규</button><button class="wt-tab" onclick="exportCsv()"><i class="bi bi-download"></i>CSV</button>'+((window.__trash&&window.__trash.length)?'<button class="wt-tab" onclick="showTrash()"><i class="bi bi-trash"></i>휴지통 '+window.__trash.length+'</button>':'')+'</div>'+
     '<div class="scroll"><table class="wt-tbl"><thead><tr>'+
     cols.map(c=>'<th class="'+c[2]+'"'+(c[0]==='_stage'?'':' onclick="sortList(\''+c[0]+'\')"')+'>'+c[1]+(_sortKey===c[0]?(_sortDir>0?' ▲':' ▼'):'')+'</th>').join('')+
     '</tr></thead><tbody>'+
@@ -906,6 +762,11 @@ function vLedger(R){
     '</tbody></table></div></div>';
   document.getElementById('view-ledger').innerHTML=h;
 }
+
+function showTrash(){ const tr=window.__trash||[]; window.__dno=null;
+  document.getElementById('mbox').innerHTML='<div class="mhd"><div><h3><i class="bi bi-trash" style="color:var(--text-2);margin-right:6px"></i>휴지통 <span class="tx2" style="font-size:13px;font-weight:600">'+tr.length+'건</span></h3><div class="tx2" style="font-size:12px;margin-top:3px">삭제된 계약 — [복구]로 되살립니다</div></div><button class="x" onclick="closeModal()"><i class="bi bi-x-lg"></i></button></div>'+
+    '<div class="mbody">'+(tr.length?tr.map(r=>'<div class="drow"><span class="k">#'+r.no+' '+esc(r.cust)+' <span class="mut">'+esc(r.product)+'</span></span><span class="v"><button class="btn btn-sm btn-outline-primary" style="padding:1px 12px;font-size:11px" onclick="(async()=>{await restoreContract('+r._id+');showTrash();})()">복구</button></span></div>').join(''):'<div class="empty">휴지통이 비어 있습니다</div>')+'</div>';
+  document.getElementById('modal').classList.add('on'); }
 
 /* ══ 월말 정리 (완결 체크매트릭스) ══ */
 let _clsM=0,_clsOpen=false;
@@ -931,13 +792,25 @@ function vClosing(){
   '</div>';
   h+='<div class="wt-card"><div class="wt-st"><i class="bi bi-calendar2-check"></i>월별 완결 체크'+
     '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+months.map(x=>'<button class="wt-tab'+(x===m?' on':'')+'" style="padding:3px 11px" onclick="clsMonth('+x+')">'+x+'월</button>').join('')+'</span>'+
-    '<span class="hint"><label style="cursor:pointer"><input type="checkbox" '+(_clsOpen?'checked':'')+' onclick="clsToggle()"> 미완결만</label> · '+show.length+'건</span></div>'+
-    twoColTbl(show,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">담당</th><th>납품</th><th>계산서</th><th>쿠폰</th><th>수수료</th>',
+    '<span class="hint"><label style="cursor:pointer"><input type="checkbox" '+(_clsOpen?'checked':'')+' onclick="clsToggle()"> 미완결만</label> · '+show.length+'건 · <button class="wt-tab" style="padding:2px 10px" onclick="closingCsv()"><i class="bi bi-download"></i>월 CSV</button></span></div>'+
+    twoColTbl(show,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">담당</th><th>납품</th><th>계산서</th><th>쿠폰</th><th>수수료</th><th>수금</th>',
       r=>{const cpT=isCoupon(r.product),cmT=(r.channel==='대리점'||r.channel==='딜러');
-      return '<tr onclick="detail('+r.no+')"'+(_needs(r).length?' style="background:#fffdf5"':'')+'><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.rep)+'</td><td>'+chk(has(r.dDelivered))+'</td><td>'+chk(has(r.dTax))+'</td><td>'+(cpT?chk(has(r.couponDate)):'<span class="mut">-</span>')+'</td><td>'+(cmT?chk(commPaid(r)):'<span class="mut">-</span>')+'</td></tr>';},62)+
+      return '<tr onclick="detail('+r.no+')"'+(_needs(r).length?' style="background:#fffdf5"':'')+'><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.rep)+'</td><td>'+chk(has(r.dDelivered))+'</td><td>'+chk(has(r.dTax))+'</td><td>'+(cpT?chk(has(r.couponDate)):'<span class="mut">-</span>')+'</td><td>'+(cmT?chk(commPaid(r)):'<span class="mut">-</span>')+'</td><td>'+(has(r.payDate)?chk(true):'<span class="mut">-</span>')+'</td></tr>';},62)+
     '</div>';
   document.getElementById('view-closing').innerHTML=h;
 }
+function closingCsv(){
+  const rows=ROWS.filter(r=>r.saleMonth===_clsM).sort((a,b)=>a.no-b.no);
+  const cols=[['no','NO'],['cust','거래처'],['biznum','사업자번호'],['product','제품'],['rep','담당자'],['channel','채널'],['amount','계약금액'],['krw','원화환산'],['dDelivered','납품일'],['dTax','세금계산서'],['couponDate','쿠폰지급일'],['couponQty','지급수량'],['commission','수수료참조'],['pay','수금방법'],['payDate','수금일'],['shipReqNo','출고요청서'],['status','상태']];
+  let csv='﻿'+cols.map(c=>c[1]).join(',')+'\n';
+  rows.forEach(r=>{ csv+=cols.map(c=>{let v=r[c[0]];v=(v==null?'':String(v)).replace(/"/g,'""');return /[",\n]/.test(v)?'"'+v+'"':v;}).join(',')+'\n'; });
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='국내영업_'+_clsM+'월_월말정리.csv'; a.click(); toast(_clsM+'월 CSV 내보내기 완료');
+}
+function quickPayDate(no){ const c=ROWS.find(r=>r.no===no); if(!c)return; window.__dno=null;
+  document.getElementById('mbox').innerHTML='<div class="mhd"><div><h3><i class="bi bi-credit-card-2-front" style="color:var(--blue);margin-right:6px"></i>수금일 기록</h3><div class="tx2" style="font-size:12px;margin-top:3px">#'+no+' '+esc(c.cust)+' · '+esc(c.pay||'수금방법 미기재')+'</div></div><button class="x" onclick="closeModal()"><i class="bi bi-x-lg"></i></button></div>'+
+    '<div class="mbody"><div class="cform"><div class="cf"><label>수금일</label><input id="qp-date" type="date" class="form-control form-control-sm" value="'+todayStr()+'"></div></div>'+
+    '<div class="cform-foot"><span></span><div style="display:flex;gap:8px"><button class="btn btn-outline-secondary btn-sm" onclick="closeModal()">취소</button><button class="btn btn-primary btn-sm" onclick="saveQuick('+no+',\'payDate\',\'qp-date\',\'수금일 기록\')"><i class="bi bi-check-lg"></i> 저장</button></div></div></div>';
+  document.getElementById('modal').classList.add('on'); }
 
 /* ── CSV ── */
 function exportCsv(){
