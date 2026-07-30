@@ -269,7 +269,7 @@ b.onclick=function(){p.style.display=p.style.display==='none'?'block':'none';if(
 document.getElementById('wt-fb-cancel').onclick=function(){p.style.display='none';};
 document.getElementById('wt-fb-send').onclick=function(){var t=document.getElementById('wt-fb-msg');var m=(t&&t.value||'').trim();var em=wtEmail();var nmEl=document.getElementById('wt-fb-name');var nm=(nmEl&&nmEl.value||'').trim();if(!em&&!nm){if(nmEl){nmEl.style.borderColor='#ef4444';nmEl.focus();}return;}if(!m){if(t){t.style.borderColor='#ef4444';t.focus();}return;}wtPost('site_feedback',{site:SITE,page:PAGE,message:m.slice(0,2000),reporter:em||nm.slice(0,100)});p.innerHTML='<div style="color:#5eead4;font-size:13px;text-align:center;padding:14px 4px">접수되었습니다! 감사합니다 🙏</div>';setTimeout(function(){p.style.display='none';p.remove();b.remove();wtFb();},1600);};
 }
-if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',wtFb);}else{wtFb();}
+/* 요청·신고 플로팅 버튼 제거(사용자 요청) — 오류 자동수집은 유지 */
 })();</script>
 
 <script>
@@ -417,11 +417,12 @@ function vDash(R){
   const noTax=R.filter(r=>!has(r.dTax));
   const c=window.__chg;
   const chgN=c?(c.neo.length+c.del.length+c.can.length):0;
+  window.__DS={undel:undel,week:week,noTax:noTax,oliPay:oliPay};
   let h='<div class="wt-band">'+
-    '<div class="wt-hero"><span class="l">미납품 <span class="mut" style="font-size:10px;font-weight:500">· 수주-미납품</span></span><b'+(overdue.length?' class="rd"':'')+'>'+undel.length+'<span class="u">건</span></b><span class="s">'+(overdue.length?'예정일 경과 '+overdue.length+'건 · ':'')+'납품완료 '+(R.length-undel.length)+'/'+R.length+'</span></div>'+
+    '<div class="wt-hero" style="cursor:pointer" onclick="go(\'delivery\')"><span class="l">미납품 <span class="mut" style="font-size:10px;font-weight:500">· 수주-미납품</span></span><b'+(overdue.length?' class="rd"':'')+'>'+undel.length+'<span class="u">건</span></b><span class="s">'+(overdue.length?'예정일 경과 '+overdue.length+'건 · ':'')+'납품완료 '+(R.length-undel.length)+'/'+R.length+' · 상세 →</span></div>'+
     fact('Oligio 쿠폰 지급대상',oliPay.length,'건','납품완료·미기재','am',"go('oligio')")+
-    fact('이번주 납품예정',week.length,'건','D-7 이내')+
-    fact('세금계산서 미발행',noTax.length,'건',won1(noTax.reduce((s,x)=>s+(x.krw||0),0)))+
+    fact('이번주 납품예정',week.length,'건','D-7 이내','',"drillKey('week')")+
+    fact('세금계산서 미발행',noTax.length,'건',won1(noTax.reduce((s,x)=>s+(x.krw||0),0)),'',"drillKey('noTax')")+
     fact('지난 방문 이후 변동',chgN,'건',chgN?'알림 확인':'변동 없음',chgN?'am':'',chgN?"showChg()":'')+
   '</div>';
   // 납품 임박 + 최근 메시지
@@ -521,6 +522,20 @@ async function postBoard(){ const el=document.getElementById('board-in'); const 
   const ok=await postMsg('board',b); el.disabled=false; if(!ok){ toast(BOARD_OK?'등록 실패':'메시지 기능 준비 필요'); return; } el.value=''; await loadBoard(); vMessages(filtered()); toast('등록되었습니다'); }
 async function postMsg(scope,body){ try{ const {error}=await _sb.from('kor_messages').insert({scope:scope,author:MENAME,body:body.slice(0,2000)}); return !error; }catch(e){ return false; } }
 async function delMsg(id){ if(!confirm('삭제할까요?'))return; try{ await _sb.from('kor_messages').delete().eq('id',id); }catch(e){} await loadBoard(); if(curView==='messages')vMessages(filtered()); }
+
+/* ── KPI 상세내역 조회(드릴다운) ── */
+function drillList(title,icon,rows,dateLabel,dateField){
+  const body=rows.length?'<div class="scroll" style="max-height:62vh"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">지역</th><th class="l">담당</th>'+(dateField?'<th>'+dateLabel+'</th>':'')+'</tr></thead><tbody>'+
+    rows.map(r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.region||'-')+'</td><td class="l">'+esc(r.rep)+'</td>'+(dateField?'<td>'+esc(r[dateField]||'-')+'</td>':'')+'</tr>').join('')+'</tbody></table></div>':'<div class="empty">해당 건이 없습니다</div>';
+  document.getElementById('mbox').innerHTML='<div class="mhd"><div><h3><i class="bi '+icon+'" style="color:var(--blue);margin-right:7px"></i>'+esc(title)+' <span class="tx2" style="font-size:13px;font-weight:600">'+rows.length+'건</span></h3><div class="tx2" style="font-size:12px;margin-top:3px">행 클릭 시 계약 상세</div></div><button class="x" onclick="closeModal()"><i class="bi bi-x-lg"></i></button></div><div class="mbody">'+body+'</div>';
+  document.getElementById('modal').classList.add('on');
+}
+function drillKey(k){ const s=window.__DS||{}; const M={
+  week:['이번주 납품예정','bi-truck',s.week,'납품예정','dDeliverDue'],
+  noTax:['세금계산서 미발행','bi-receipt',s.noTax,'납품일','dDelivered'],
+  undel:['미납품','bi-truck',s.undel,'납품예정','dDeliverDue'],
+  oliPay:['Oligio 쿠폰 지급대상','bi-ticket-perforated',s.oliPay,'납품일','dDelivered']
+}[k]; if(M)drillList(M[0],M[1],M[2]||[],M[3],M[4]); }
 
 /* ── 상세 모달 (+ 계약별 메모) ── */
 function detail(no){
