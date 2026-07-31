@@ -991,10 +991,12 @@ function xfBuildDiff(parsed){
   });
   return {toInsert:toInsert,toUpdate:toUpdate,conflicts:conflicts,mismatches:mismatches,dupNo:dupNo,badRows:badRows,sumAmount:sumAmount,total:parsed.length};
 }
-/* ══ 수수료 정리 엑셀 → 수금일 채움 (판매지급 수수료 정리.xlsx '판매수수료 지급' 시트 등)
-   정책: 이미 수금일이 있는 계약은 절대 건드리지 않는다. 기안번호+거래처+제품명+금액이
-   모두 일치하는 후보가 정확히 1건일 때만 그 행의 입금일로 채운다(모호하면 건너뛰고 목록에만 표시). */
-const XF2_HEADER_MAP={'거래처':'cust','품명':'product','제품가격(VAT포함)':'amount','입금일':'payDate','일반지출결의서문서번호':'commission'};
+/* ══ 수수료 정리 엑셀 → 수금일·수수료금액 채움 (판매지급 수수료 정리.xlsx '판매수수료 지급' 시트 등)
+   정책: 이미 값이 있는 항목은 절대 덮어쓰지 않고 빈 항목만 채운다.
+   매칭키: 대시보드의 기안번호(수수료 참조)와 엑셀의 "일반 지출 결의서 문서번호"가 같은 행을 우선 사용.
+   기안번호 하나가 여러 계약(묶음 지급)에 걸쳐 있으면 거래처·제품명으로 좁혀서 특정한다.
+   사이트에 기안번호가 아직 없는 계약은 거래처+제품명+금액으로 대체 매칭한다. 모호하면 자동 반영하지 않는다. */
+const XF2_HEADER_MAP={'거래처':'cust','품명':'product','제품가격(VAT포함)':'amount','입금일':'payDate','수수료금액(VAT포함)':'commAmount','일반지출결의서문서번호':'commission'};
 const XF2_REQUIRED=['거래처','품명','입금일','일반지출결의서문서번호'];
 function xfFindCommHeaderRow(ws){ const ref=ws['!ref']; if(!ref)return null; const range=XLSX.utils.decode_range(ref);
   const maxR=Math.min(range.e.r,14);
@@ -1010,36 +1012,51 @@ function xfFindCommSheet(wb){ let best=null;
   return best; }
 function xfNormProduct(s){ s=String(s||'').trim().replace(/\s+/g,' '); const i=s.indexOf('/'); if(i>=0)s=s.slice(0,i).trim(); return s; }
 function xfParseCommRow(r){ const s=xfCellStr;
-  return {cust:s(r.cust),product:s(r.product),amount:xfNum(s(r.amount)),payDate:xfDateFromCell(r.payDate),commission:s(r.commission)}; }
+  return {cust:s(r.cust),product:s(r.product),amount:xfNum(s(r.amount)),payDate:xfDateFromCell(r.payDate),commAmount:xfNum(s(r.commAmount)),commission:s(r.commission)}; }
 function xfBuildCommDiff(parsed){
   const rows=parsed.filter(function(p){return p.cust&&p.product&&p.amount!=null;});
-  const toFill=[],ambiguous=[]; let matchedNoPayYet=0;
+  const byCommission={};
+  rows.forEach(function(p){ if(!p.commission)return; (byCommission[p.commission]=byCommission[p.commission]||[]).push(p); });
+  const toFill=[],ambiguous=[];
   ROWS.forEach(function(site){
-    if(has(site.payDate))return; // 이미 수금일 있으면 건드리지 않음
+    const needPay=!has(site.payDate), needComm=(site.commAmount==null||site.commAmount==='');
+    if(!needPay&&!needComm)return; // 둘 다 이미 채워져 있으면 건드리지 않음
     const sc=xfNormCust(site.cust),sp=xfNormProduct(site.product),sa=Number(site.amount);
-    const cands=rows.filter(function(p){
-      const pc=xfNormCust(p.cust);
-      if(sc!==pc&&sc.indexOf(pc)<0&&pc.indexOf(sc)<0)return false;
-      if(xfNormProduct(p.product)!==sp)return false;
-      if(Number(p.amount)!==sa)return false;
-      return true; });
-    if(!cands.length)return;
-    let m=null;
-    if(cands.length===1)m=cands[0];
-    else if(site.commission){ const byC=cands.filter(function(c){return c.commission&&c.commission===site.commission;}); if(byC.length===1)m=byC[0]; }
-    if(!m){ ambiguous.push({no:site.no,cust:site.cust,product:site.product,n:cands.length}); return; }
+    let cands=[];
+    if(site.commission&&byCommission[site.commission])cands=byCommission[site.commission].slice();
+    if(cands.length>1){
+      const narrowed=cands.filter(function(p){return xfNormCust(p.cust)===sc&&xfNormProduct(p.product)===sp;});
+      if(narrowed.length)cands=narrowed;
+    }
+    if(!cands.length){
+      // 사이트에 기안번호가 없거나(또는 이 파일에서 못 찾음) — 거래처+제품명+금액으로 대체 매칭
+      cands=rows.filter(function(p){
+        const pc=xfNormCust(p.cust);
+        if(sc!==pc&&sc.indexOf(pc)<0&&pc.indexOf(sc)<0)return false;
+        if(xfNormProduct(p.product)!==sp)return false;
+        if(Number(p.amount)!==sa)return false;
+        return true; });
+    }
+    if(!cands.length)return; // 이 파일에서 매칭되는 행 없음 — 조용히 건너뜀
+    if(cands.length>1){ ambiguous.push({no:site.no,cust:site.cust,product:site.product,n:cands.length}); return; }
+    const m=cands[0];
     if(site.commission&&m.commission&&site.commission!==m.commission){ ambiguous.push({no:site.no,cust:site.cust,product:site.product,reason:'기안번호 불일치: 사이트 '+site.commission+' ↔ 엑셀 '+m.commission}); return; }
-    if(!has(m.payDate)){ matchedNoPayYet++; return; } // 매칭은 됐지만 아직 입금 전 — 정상, 채울 값 없음
-    toFill.push({id:site._id,no:site.no,cust:site.cust,product:site.product,amount:site.amount,payDate:m.payDate,commission:m.commission||''});
+    const patch={};
+    if(needPay&&has(m.payDate))patch.payDate=m.payDate;
+    if(needComm&&m.commAmount!=null)patch.commAmount=m.commAmount;
+    if(!Object.keys(patch).length)return; // 매칭은 됐지만 엑셀 쪽도 비어있어 채울 값이 없음
+    toFill.push({id:site._id,no:site.no,cust:site.cust,product:site.product,amount:site.amount,patch:patch,commission:m.commission||''});
   });
-  return {toFill:toFill,ambiguous:ambiguous,matchedNoPayYet:matchedNoPayYet,totalRows:rows.length};
+  return {toFill:toFill,ambiguous:ambiguous,totalRows:rows.length};
 }
 function renderCommPreview(diff){
   const res=document.getElementById('xf-result'); if(!res)return;
+  const payCnt=diff.toFill.filter(function(f){return f.patch.payDate;}).length;
+  const commCnt=diff.toFill.filter(function(f){return f.patch.commAmount!=null;}).length;
   let h='<div class="wt-grid g-2" style="margin-bottom:16px">'+
     fact('엑셀 수수료 행',diff.totalRows,'건','')+
-    fact('수금일 채워짐',diff.toFill.length,'건','미수금 → 수금 확인')+
-    fact('입금 전(정상)',diff.matchedNoPayYet,'건','매칭됐지만 입금일 없음')+
+    fact('수금일 채워짐',payCnt,'건','')+
+    fact('수수료금액 채워짐',commCnt,'건','')+
     fact('확인 필요',diff.ambiguous.length,'건','후보 모호·기안번호 불일치')+
     '</div>';
   if(diff.ambiguous.length){
@@ -1047,11 +1064,11 @@ function renderCommPreview(diff){
       '<div style="margin-top:6px;font-size:11.5px">'+diff.ambiguous.slice(0,30).map(function(m){return '#'+m.no+' '+esc(m.cust)+' · '+esc(m.product)+(m.reason?' — '+esc(m.reason):' — 후보 '+m.n+'건, 특정 불가');}).join('<br>')+'</div></div>';
   }
   if(diff.toFill.length){
-    h+='<div class="scroll" style="max-height:320px;margin-bottom:16px"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th>금액</th><th class="l">기안번호</th><th>채워질 수금일</th></tr></thead><tbody>'+
-      diff.toFill.map(function(f){return '<tr onclick="detail('+f.no+')"><td class="rk">'+f.no+'</td><td class="l nm">'+esc(f.cust)+'</td><td class="l">'+esc(f.product)+'</td><td>'+fmt(f.amount)+'</td><td class="l tx2">'+esc(f.commission||'-')+'</td><td style="color:var(--green);font-weight:700">'+esc(f.payDate)+'</td></tr>';}).join('')+
+    h+='<div class="scroll" style="max-height:320px;margin-bottom:16px"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th>금액</th><th class="l">기안번호</th><th>채워질 수금일</th><th>채워질 수수료금액</th></tr></thead><tbody>'+
+      diff.toFill.map(function(f){return '<tr onclick="detail('+f.no+')"><td class="rk">'+f.no+'</td><td class="l nm">'+esc(f.cust)+'</td><td class="l">'+esc(f.product)+'</td><td>'+fmt(f.amount)+'</td><td class="l tx2">'+esc(f.commission||'-')+'</td><td style="color:var(--green);font-weight:700">'+(f.patch.payDate?esc(f.patch.payDate):'<span class="mut">-</span>')+'</td><td style="color:var(--green);font-weight:700">'+(f.patch.commAmount!=null?fmt(f.patch.commAmount):'<span class="mut">-</span>')+'</td></tr>';}).join('')+
       '</tbody></table></div>';
   }
-  h+='<div class="cform-foot"><span class="mut" style="font-size:12px">'+(diff.toFill.length?('수금일 '+diff.toFill.length+'건이 반영됩니다'):'반영할 변경사항이 없습니다')+'</span>'+
+  h+='<div class="cform-foot"><span class="mut" style="font-size:12px">'+(diff.toFill.length?(diff.toFill.length+'건이 반영됩니다'):'반영할 변경사항이 없습니다')+'</span>'+
     (diff.toFill.length?'<button class="btn btn-primary btn-sm" onclick="commitCommUpload()"><i class="bi bi-check-lg"></i> 적용하기</button>':'')+'</div>';
   res.innerHTML=h;
 }
@@ -1061,20 +1078,20 @@ async function commitCommUpload(){
   const btn=res.querySelector('.cform-foot button'); if(btn){ btn.disabled=true; btn.textContent='적용 중…'; }
   let ok=0; const errs=[];
   for(const f of diff.toFill){
-    const cur=ROWS.find(function(r){return r.no===f.no;})||{}; const d=Object.assign({},cur,{payDate:f.payDate}); delete d._id; delete d._month;
+    const cur=ROWS.find(function(r){return r.no===f.no;})||{}; const d=Object.assign({},cur,f.patch); delete d._id; delete d._month;
     const {error}=await _sb.from('kor_contracts').update({data:d,updated_at:new Date().toISOString(),updated_by:MENAME}).eq('id',f.id);
     if(error)errs.push('#'+f.no+' 실패: '+error.message); else ok++;
   }
   await loadData(); initFilters(); buildNav();
-  res.innerHTML='<div class="wt-card" style="border-color:'+(errs.length?'var(--red)':'var(--green)')+'"><div class="wt-st"><i class="bi '+(errs.length?'bi-exclamation-triangle':'bi-check-circle')+'" style="color:'+(errs.length?'var(--red)':'var(--green)')+'"></i>수금일 반영 완료</div>'+
-    '<div style="font-size:13px;line-height:1.9">수금일 반영 <b>'+ok+'</b>건'+(errs.length?('<br><span style="color:var(--red)">오류: '+errs.map(esc).join(' / ')+'</span>'):'')+'</div>'+
+  res.innerHTML='<div class="wt-card" style="border-color:'+(errs.length?'var(--red)':'var(--green)')+'"><div class="wt-st"><i class="bi '+(errs.length?'bi-exclamation-triangle':'bi-check-circle')+'" style="color:'+(errs.length?'var(--red)':'var(--green)')+'"></i>반영 완료</div>'+
+    '<div style="font-size:13px;line-height:1.9">수금일·수수료금액 반영 <b>'+ok+'</b>건'+(errs.length?('<br><span style="color:var(--red)">오류: '+errs.map(esc).join(' / ')+'</span>'):'')+'</div>'+
     '<div style="margin-top:12px"><button class="btn btn-outline-secondary btn-sm" onclick="go(\'work\')">워크데스크에서 확인</button></div></div>';
   window.__xfCommDiff=null;
 }
 function vUpload(){
   const h='<div class="wt-card"><div class="wt-st"><i class="bi bi-cloud-upload"></i>데이터 업로드'+
     '<span class="hint">계약체결 리스트 엑셀 또는 판매지급 수수료 정리 엑셀을 인식해 반영합니다</span></div>'+
-    '<div class="warnnote" style="margin-bottom:14px">비어 있는 항목만 채웁니다. 이미 값이 있는 항목이 엑셀 값과 다르면 자동으로 바꾸지 않고 아래 "확인 필요" 목록으로 보여드려요 — 실시간으로 입력해둔 수금·수수료·비고 같은 값이 지워질 걱정 없이 올리셔도 됩니다. "판매지급 수수료 정리" 엑셀을 올리면 기안번호·거래처·제품명·금액이 일치하는 계약의 수금일(입금일)만 채워드려요. 반영 전 미리보기를 꼭 확인해주세요.</div>'+
+    '<div class="warnnote" style="margin-bottom:14px">비어 있는 항목만 채웁니다. 이미 값이 있는 항목이 엑셀 값과 다르면 자동으로 바꾸지 않고 아래 "확인 필요" 목록으로 보여드려요 — 실시간으로 입력해둔 수금·수수료·비고 같은 값이 지워질 걱정 없이 올리셔도 됩니다. "판매지급 수수료 정리" 엑셀을 올리면 기안번호(없으면 거래처·제품명·금액)가 일치하는 계약의 수금일(입금일)·수수료금액 중 비어있는 항목만 채워드려요. 반영 전 미리보기를 꼭 확인해주세요.</div>'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">'+
     '<input type="file" id="xf-file" accept=".xlsx,.xls" style="display:none" onchange="onXlsxFile(event)">'+
     '<button class="btn btn-primary btn-sm" onclick="document.getElementById(\'xf-file\').click()"><i class="bi bi-file-earmark-excel"></i> 엑셀 파일 선택</button>'+
