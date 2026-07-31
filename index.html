@@ -365,7 +365,7 @@ function grp(a,k){const m={};a.forEach(x=>{const v=x[k]||'미분류';(m[v]=m[v]|
 function closeModal(){document.getElementById('modal').classList.remove('on');}
 function has(v){return !!(v&&String(v).trim()&&String(v).trim()!=='-');}
 function numOrNull(s){ s=String(s||'').replace(/[^0-9.-]/g,''); if(s==='')return null; const n=Number(s); return isNaN(n)?null:n; }
-function chk(v,color){return v?'<i class="bi bi-check-circle-fill" style="color:var(--'+(color||'green')+')"></i>':'<i class="bi bi-x-circle" style="color:var(--red)"></i>';}
+function chk(v,color){return v?'<i class="bi bi-check-circle-fill" style="color:var(--'+(color||'yellow')+')"></i>':'<i class="bi bi-x-circle" style="color:var(--red)"></i>';}
 function pd(s){ if(!has(s))return null; const d=new Date(String(s).slice(0,10)); return isNaN(d)?null:d; }
 function today0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
 function isOli(p){ return /^Oligio/i.test(p||''); }
@@ -565,7 +565,7 @@ function twoColTbl(rows,head,rowFn,maxH){ if(!rows.length)return '<div class="em
 function commPaid(r){ return r.commYN==='Y'||r.commAmount!=null; }
 /* ── 계약 리스트 ── */
 let _sortKey='no', _sortDir=1;
-function sortList(k){ if(_sortKey===k)_sortDir*=-1; else{_sortKey=k;_sortDir=1;} render(); }
+function sortList(k){ if(_sortKey===k){ if(_sortDir===1)_sortDir=-1; else{_sortKey='no';_sortDir=1;} } else{_sortKey=k;_sortDir=1;} render(); }
 
 /* ── 메시지 (팀 보드) ── */
 async function loadBoard(){ try{ const {data,error}=await _sb.from('kor_messages').select('*').eq('scope','board').order('created_at',{ascending:false}).limit(200); if(error){BOARD_OK=false;BOARD=[];return;} BOARD_OK=true; BOARD=data||[]; }catch(e){ BOARD_OK=false; BOARD=[]; } }
