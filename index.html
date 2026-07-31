@@ -44,7 +44,11 @@ body{min-height:100vh;background:var(--bg);font-family:'Noto Sans KR',sans-serif
 .dd-item .bdg{min-width:26px;height:19px;border-radius:5px;color:#fff;font-size:9.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;flex-shrink:0}
 .dd-head{padding:9px 13px 6px;font-size:10px;font-weight:700;color:var(--mut);letter-spacing:.05em;text-transform:uppercase}
 /* ── 메인 ── */
-.main{max-width:none;margin:0;padding:20px 22px 80px}
+.main{max-width:none;margin:0;padding:16px 22px 26px}
+.wt-band-sm{padding:11px 20px!important;margin-bottom:14px}
+.wt-band-sm .wt-hero>b{font-size:29px}
+.wt-band-sm .wt-fact b{font-size:20px}
+.wt-band-sm .s:empty{display:none}
 .wt-mast{padding-bottom:13px;border-bottom:2px solid var(--navy);margin-bottom:18px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px}
 .wt-mast .kick{font-size:11px;font-weight:700;letter-spacing:.14em;color:var(--mut);text-transform:uppercase}
 .wt-mast .t{font-size:22px;font-weight:800;color:var(--ink);letter-spacing:-.01em;margin-top:4px;display:flex;align-items:center;gap:9px}
@@ -290,7 +294,6 @@ mark{background:#fde68a;color:inherit;padding:0 1px;border-radius:2px}
   <div id="view-work" class="view on"></div>
   <div id="view-ledger" class="view"></div>
   <div id="view-closing" class="view"></div>
-  <div id="view-messages" class="view"></div>
 </main>
 </div>
 
@@ -398,7 +401,7 @@ async function enter(user){ ME=user.email||''; MENAME=ME.split('@')[0];
     if(pr&&pr.display_name)MENAME=pr.display_name;
     document.getElementById('ui-name').textContent=MENAME;
     document.getElementById('ui-dept').textContent=(pr&&pr.dept)?pr.dept:(ME); }catch(e){ document.getElementById('ui-name').textContent=MENAME; }
-  await loadData(); detectChanges(); await loadBoard(); await renderSwitcher();
+  await loadData(); detectChanges(); await renderSwitcher();
   document.getElementById('load').style.display='none'; document.getElementById('topwrap').style.display='block';
   initFilters(); buildNav(); route(); renderChgBar();
 }
@@ -466,8 +469,7 @@ function filtered(){ return ROWS.filter(r=>{
 const VIEWS=[
  ['work','bi-lightning-charge','워크데스크','오늘 처리할 일 — 시스템이 계산한 큐'],
  ['ledger','bi-journal-text','계약 대장','전체 계약 검색·조회·입력'],
- ['closing','bi-calendar2-check','월말 정리','월별 완결 체크·마감'],
- ['messages','bi-chat-dots','메시지','팀 공유 · 변동 공지']];
+ ['closing','bi-calendar2-check','월말 정리','월별 완결 체크·마감']];
 const NEEDTOOLS={ledger:1};
 function queues(){ const T=today0();
   const undel=ROWS.filter(r=>!has(r.dDelivered));
@@ -481,7 +483,6 @@ function queues(){ const T=today0();
 }
 function navBadge(k){
   if(k==='work'){ const q=queues(); const n=q.late.length+q.coup.length; return n?'<span class="bdg rd">'+n+'</span>':''; }
-  if(k==='messages'){ const n=unreadBoard(); return n?'<span class="bdg rd">'+n+'</span>':''; }
   return '';
 }
 function buildNav(){ document.getElementById('nav').innerHTML=VIEWS.map(v=>'<button class="tnav" data-v="'+v[0]+'" onclick="go(\''+v[0]+'\')"><i class="bi '+v[1]+'"></i><span class="lbl">'+v[2]+'</span>'+navBadge(v[0])+'</button>').join(''); }
@@ -498,7 +499,7 @@ function render(){
   const R=useF?filtered():ROWS;
   document.getElementById('fcount').innerHTML='<b>'+R.length+'</b>건';
   renderChips(useF);
-  ({work:vWork,ledger:vLedger,closing:vClosing,messages:vMessages}[curView])(R);
+  ({work:vWork,ledger:vLedger,closing:vClosing}[curView])(R);
 }
 function renderChips(show){ const el=document.getElementById('fchips'); if(!el)return;
   if(!show){ el.innerHTML=''; return; }
@@ -687,30 +688,18 @@ function vWork(){
   const q=queues(), T=today0(), c=window.__chg;
   const chgN=c?(c.neo.length+c.del.length+c.can.length):0;
   const week=q.due.filter(r=>{const d=pd(r.dDeliverDue);return d&&(d-T)/864e5<=7;});
-  let h='<div class="tx2" style="font-size:11.5px;margin:0 0 12px">기준일 '+esc(DATA.updatedAt||'-')+' · 총 '+ROWS.length+'건 · 큐는 입력 즉시 자동 갱신</div>';
-  h+='<div class="wt-band" style="padding:16px 22px">'+
-    '<div class="wt-hero" style="cursor:pointer" onclick="qTab(\'late\')"><span class="l">납품 지연 <span class="mut" style="font-size:10px;font-weight:500">· 예정일 경과</span></span><b'+(q.late.length?' class="rd"':'')+'>'+q.late.length+'<span class="u">건</span></b><span class="s">최우선 확인 · 처리 →</span></div>'+
-    fact('이번주 납품예정',week.length,'건','D-7 이내','',"qTab('due')")+
-    fact('쿠폰·적립금 지급',q.coup.length,'건','납품완료·미지급','am',"qTab('coup')")+
-    fact('수수료 미처리',q.comm.length,'건','대리점/딜러','',"qTab('comm')")+
-    fact('세금계산서 미발행',q.tax.length,'건',won1(q.tax.reduce((s,x)=>s+(x.krw||0),0)),'',"qTab('tax')")+
-    fact('지난 방문 이후 변동',chgN,'건',chgN?'알림 확인':'변동 없음',chgN?'am':'',chgN?"showChg()":'')+
+  let h='<div class="wt-band wt-band-sm">'+
+    '<div class="wt-hero" style="cursor:pointer" onclick="qTab(\'late\')"><span class="l">납품 지연 <span class="mut" style="font-size:10px;font-weight:500">· 예정일 경과</span></span><b'+(q.late.length?' class="rd"':'')+'>'+q.late.length+'<span class="u">건</span></b></div>'+
+    fact('이번주 납품예정',week.length,'건','','',"qTab('due')")+
+    fact('쿠폰·적립금 지급',q.coup.length,'건','','am',"qTab('coup')")+
+    fact('수수료 미처리',q.comm.length,'건','','',"qTab('comm')")+
+    fact('세금계산서 미발행',q.tax.length,'건','','',"qTab('tax')")+
+    fact('지난 방문 이후 변동',chgN,'건','',chgN?'am':'',chgN?"showChg()":'')+
   '</div>';
   const tabs=[['late','납품 지연',q.late.length],['due','납품 대기',q.due.length],['coup','쿠폰·적립금',q.coup.length],['comm','수수료',q.comm.length],['tax','계산서',q.tax.length]];
-  h+='<div class="wt-grid g-32" style="align-items:start">';
   h+='<div class="wt-card"><div class="wt-st"><i class="bi bi-lightning-charge"></i>처리 큐'+
     '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+tabs.map(t=>'<button class="wt-tab'+(_qTab===t[0]?' on':'')+'" style="padding:3px 11px" onclick="qTab(\''+t[0]+'\')">'+t[1]+' '+t[2]+'</button>').join('')+'</span>'+
     '<span class="hint">행 클릭 상세 · 버튼 즉시 처리</span></div>'+qBody(q,week)+'</div>';
-  h+='<div style="display:flex;flex-direction:column;gap:16px">'+
-    '<div class="wt-card">'+st('bi-plus-circle','빠른 작업','')+
-      '<div style="display:flex;flex-direction:column;gap:8px">'+
-      '<button class="wt-tab" style="justify-content:flex-start" onclick="newContract()"><i class="bi bi-plus-lg"></i>신규 계약 입력</button>'+
-      '<button class="wt-tab" style="justify-content:flex-start" onclick="go(\'closing\')"><i class="bi bi-calendar2-check"></i>월말 정리로 이동</button>'+
-      '<button class="wt-tab" style="justify-content:flex-start" onclick="go(\'ledger\')"><i class="bi bi-journal-text"></i>계약 대장 검색</button></div></div>'+
-    '<div class="wt-card">'+st('bi-chat-dots','팀 메시지','최근 4개')+
-      (BOARD_OK?(BOARD.length?BOARD.slice(0,4).map(m=>'<div class="msg" style="padding:8px 2px"><div class="av">'+esc((m.author||'?').slice(0,1))+'</div><div class="bd"><div class="hd"><span class="au">'+esc(m.author)+'</span><span class="tm">'+ago(m.created_at)+'</span></div><div class="tx" style="font-size:12px">'+esc(m.body)+'</div></div></div>').join(''):'<div class="empty" style="padding:14px">아직 메시지가 없습니다</div>'):'<div class="warnnote">메시지 준비 필요</div>')+
-      '<div style="text-align:right;margin-top:8px"><span class="wt-tab" onclick="go(\'messages\')">전체 <i class="bi bi-arrow-right"></i></span></div></div>'+
-  '</div></div>';
   document.getElementById('view-work').innerHTML=h;
   if(_qTab==='coup')renderBulk();
 }
@@ -752,14 +741,16 @@ function stageDots(r){ const s=[['접수',r.dContract],['출고',r.dShipDue],['�
   return '<span style="display:inline-flex;gap:3px" title="'+s.map(x=>x[0]+(has(x[1])?'✓':'—')).join(' · ')+'">'+s.map(x=>'<i style="width:8px;height:8px;border-radius:50%;display:inline-block;background:'+(has(x[1])?'var(--blue)':'#dbe3ec')+'"></i>').join('')+'</span>'; }
 function vLedger(R){
   R=R.slice().sort((a,b)=>{ let x=a[_sortKey],y=b[_sortKey]; if(typeof x==='string'||typeof y==='string'){x=x||'';y=y||'';return _sortDir*String(x).localeCompare(String(y));} return _sortDir*((x||0)-(y||0)); });
-  const cols=[['no','#','rk'],['cust','거래처','l'],['biznum','사업자번호','l'],['product','제품','l'],['rep','담당자','l'],['channel','채널','l'],['saleMonth','매출월',''],['status','상태','l'],['_stage','진행','l']];
-  let h='<div class="wt-card">'+st('bi-journal-text','계약 대장','헤더 클릭 정렬 · 행 클릭 상세 · '+R.length+'건')+
-    '<div style="text-align:right;margin:-40px 0 8px;display:flex;gap:8px;justify-content:flex-end"><button class="wt-tab" onclick="newContract()"><i class="bi bi-plus-lg"></i>신규</button><button class="wt-tab" onclick="exportCsv()"><i class="bi bi-download"></i>CSV</button>'+((window.__trash&&window.__trash.length)?'<button class="wt-tab" onclick="showTrash()"><i class="bi bi-trash"></i>휴지통 '+window.__trash.length+'</button>':'')+'</div>'+
-    '<div class="scroll"><table class="wt-tbl"><thead><tr>'+
-    cols.map(c=>'<th class="'+c[2]+'"'+(c[0]==='_stage'?'':' onclick="sortList(\''+c[0]+'\')"')+'>'+c[1]+(_sortKey===c[0]?(_sortDir>0?' ▲':' ▼'):'')+'</th>').join('')+
-    '</tr></thead><tbody>'+
-    (R.length?R.map(c=>'<tr onclick="detail('+c.no+')"><td class="rk">'+c.no+'</td><td class="l nm">'+esc(c.cust)+'</td><td class="l tx2">'+esc(c.biznum||'-')+'</td><td class="l">'+esc(c.product)+'</td><td class="l">'+esc(c.rep)+'</td><td class="l">'+esc(c.channel)+'</td><td>'+(c.saleMonth?c.saleMonth+'월':'-')+'</td><td class="l">'+stChip(c.status)+'</td><td class="l">'+stageDots(c)+'</td></tr>').join(''):'<tr><td colspan="9" class="empty">해당 조건의 계약이 없습니다</td></tr>')+
-    '</tbody></table></div></div>';
+  const cols=[['no','#','rk'],['cust','거래처','l'],['product','제품','l'],['rep','담당자','l'],['saleMonth','매출월',''],['status','상태','l'],['_stage','진행','l']];
+  const head=cols.map(c=>'<th class="'+c[2]+'"'+(c[0]==='_stage'?'':' onclick="sortList(\''+c[0]+'\')"')+'>'+c[1]+(_sortKey===c[0]?(_sortDir>0?' ▲':' ▼'):'')+'</th>').join('');
+  let h='<div class="wt-card"><div class="wt-st"><i class="bi bi-journal-text"></i>계약 대장'+
+    '<span class="hint" style="display:inline-flex;gap:6px;align-items:center">'+R.length+'건 · 헤더 클릭 정렬'+
+    '<button class="wt-tab" style="padding:2px 10px" onclick="newContract()"><i class="bi bi-plus-lg"></i>신규</button>'+
+    '<button class="wt-tab" style="padding:2px 10px" onclick="exportCsv()"><i class="bi bi-download"></i>CSV</button>'+
+    ((window.__trash&&window.__trash.length)?'<button class="wt-tab" style="padding:2px 10px" onclick="showTrash()"><i class="bi bi-trash"></i>휴지통 '+window.__trash.length+'</button>':'')+'</span></div>'+
+    (R.length?twoColTbl(R,head,
+      c=>'<tr onclick="detail('+c.no+')"><td class="rk">'+c.no+'</td><td class="l nm">'+esc(c.cust)+'</td><td class="l">'+esc(c.product)+'</td><td class="l">'+esc(c.rep)+'</td><td>'+(c.saleMonth?c.saleMonth+'월':'-')+'</td><td class="l">'+stChip(c.status)+'</td><td class="l">'+stageDots(c)+'</td></tr>',72)
+    :'<div class="empty">해당 조건의 계약이 없습니다</div>')+'</div>';
   document.getElementById('view-ledger').innerHTML=h;
 }
 
@@ -783,19 +774,19 @@ function vClosing(){
   const chk=v=>v?'<i class="bi bi-check-circle-fill" style="color:var(--green)"></i>':'<i class="bi bi-x-circle" style="color:var(--red)"></i>';
   const nd=(r,k)=>_needs(r).indexOf(k)>=0;
   const show=_clsOpen?open:rows;
-  let h='<div class="wt-band" style="padding:16px 22px">'+
-    '<div class="wt-hero"><span class="l">'+m+'월 완결률</span><b'+(open.length?'':' class="gr"')+'>'+pctv(rows.length-open.length,rows.length)+'<span class="u">%</span></b><span class="s">'+(rows.length-open.length)+' / '+rows.length+'건 완결 · 미완결 '+open.length+'건</span></div>'+
-    fact('계약 매출',eok(rows.reduce((s,x)=>s+(x.krw||0),0)).toFixed(1),'억',rows.length+'건')+
-    fact('납품 완료',rows.filter(r=>has(r.dDelivered)).length+'/'+rows.length,'','미납 '+rows.filter(r=>!has(r.dDelivered)).length)+
-    fact('계산서 발행',rows.filter(r=>has(r.dTax)).length+'/'+rows.length,'','미발행 '+rows.filter(r=>!has(r.dTax)).length)+
-    fact('쿠폰·수수료 잔여',rows.filter(r=>nd(r,'쿠폰지급')).length+' · '+rows.filter(r=>nd(r,'수수료')).length,'','지급대기 · 미처리')+
+  let h='<div class="wt-band wt-band-sm">'+
+    '<div class="wt-hero"><span class="l">'+m+'월 완결률 <span class="mut" style="font-size:10px;font-weight:500">· 미완결 '+open.length+'건</span></span><b'+(open.length?'':' class="gr"')+'>'+pctv(rows.length-open.length,rows.length)+'<span class="u">%</span></b></div>'+
+    fact('계약 매출',eok(rows.reduce((s,x)=>s+(x.krw||0),0)).toFixed(1),'억','')+
+    fact('납품 완료',rows.filter(r=>has(r.dDelivered)).length+'/'+rows.length,'','')+
+    fact('계산서 발행',rows.filter(r=>has(r.dTax)).length+'/'+rows.length,'','')+
+    fact('쿠폰·수수료 잔여',rows.filter(r=>nd(r,'쿠폰지급')).length+' · '+rows.filter(r=>nd(r,'수수료')).length,'','')+
   '</div>';
   h+='<div class="wt-card"><div class="wt-st"><i class="bi bi-calendar2-check"></i>월별 완결 체크'+
     '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+months.map(x=>'<button class="wt-tab'+(x===m?' on':'')+'" style="padding:3px 11px" onclick="clsMonth('+x+')">'+x+'월</button>').join('')+'</span>'+
     '<span class="hint"><label style="cursor:pointer"><input type="checkbox" '+(_clsOpen?'checked':'')+' onclick="clsToggle()"> 미완결만</label> · '+show.length+'건 · <button class="wt-tab" style="padding:2px 10px" onclick="closingCsv()"><i class="bi bi-download"></i>월 CSV</button></span></div>'+
     twoColTbl(show,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">담당</th><th>납품</th><th>계산서</th><th>쿠폰</th><th>수수료</th><th>수금</th>',
       r=>{const cpT=isCoupon(r.product),cmT=(r.channel==='대리점'||r.channel==='딜러');
-      return '<tr onclick="detail('+r.no+')"'+(_needs(r).length?' style="background:#fffdf5"':'')+'><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.rep)+'</td><td>'+chk(has(r.dDelivered))+'</td><td>'+chk(has(r.dTax))+'</td><td>'+(cpT?chk(has(r.couponDate)):'<span class="mut">-</span>')+'</td><td>'+(cmT?chk(commPaid(r)):'<span class="mut">-</span>')+'</td><td>'+(has(r.payDate)?chk(true):'<span class="mut">-</span>')+'</td></tr>';},62)+
+      return '<tr onclick="detail('+r.no+')"'+(_needs(r).length?' style="background:#fffdf5"':'')+'><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.rep)+'</td><td>'+chk(has(r.dDelivered))+'</td><td>'+chk(has(r.dTax))+'</td><td>'+(cpT?chk(has(r.couponDate)):'<span class="mut">-</span>')+'</td><td>'+(cmT?chk(commPaid(r)):'<span class="mut">-</span>')+'</td><td>'+(has(r.payDate)?chk(true):'<span class="mut">-</span>')+'</td></tr>';},74)+
     '</div>';
   document.getElementById('view-closing').innerHTML=h;
 }
