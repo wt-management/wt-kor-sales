@@ -497,7 +497,7 @@ function queues(){ const T=today0();
   };
 }
 function navBadge(k){
-  if(k==='work'){ const q=queues(); const n=q.late.length+q.coup.length; return n?'<span class="bdg rd">'+n+'</span>':''; }
+  if(k==='work'){ const q=queues(); const n=q.coup.length+q.comm.length; return n?'<span class="bdg rd">'+n+'</span>':''; }
   return '';
 }
 function buildNav(){ document.getElementById('nav').innerHTML=VIEWS.map(v=>'<button class="tnav" data-v="'+v[0]+'" onclick="go(\''+v[0]+'\')"><i class="bi '+v[1]+'"></i><span class="lbl">'+v[2]+'</span>'+navBadge(v[0])+'</button>').join(''); }
@@ -545,7 +545,7 @@ function twoColTbl(rows,head,rowFn,maxH){ if(!rows.length)return '<div class="em
   return '<div class="scroll" style="max-height:'+(maxH||64)+'vh"><div class="wt-grid g-2" style="align-items:start;gap:0 26px"><div>'+t(L)+'</div><div>'+(R2.length?t(R2):'')+'</div></div></div>'; }
 
 /* ── 판매수수료 (대리점/딜러, 엑셀 수수료 지급 필드 기반) ── */
-function commPaid(r){ return has(r.commission)&&String(r.commission).trim()!=='-'; }
+function commPaid(r){ return r.commYN==='Y'||(has(r.commission)&&String(r.commission).trim()!=='-'); }
 /* ── 계약 리스트 ── */
 let _sortKey='no', _sortDir=1;
 function sortList(k){ if(_sortKey===k)_sortDir*=-1; else{_sortKey=k;_sortDir=1;} render(); }
@@ -588,7 +588,7 @@ function detail(no,keepCtx){
     '<div><div class="dsec">계약</div>'+row('계약금액(VAT포함)',fmt(c.amount)+'원')+row('매출(원화환산)','<b>'+fmt(c.krw)+'원</b>')+row('수량',(c.qty||0)+'대')+row('담당자',esc(c.rep))+row('매출월',c.saleMonth?c.saleMonth+'월':'-')+
     (isCoupon(c.product)?'<div class="dsec">'+couponType(c.product)+' 지급</div>'+row('납품일',esc(c.dDelivered))+row('지급일',has(c.couponDate)?'<b>'+esc(c.couponDate)+'</b>':(has(c.dDelivered)?'<span style="color:var(--amber);font-weight:700">미지급</span>':'납품 전'))+row('지급 수량',esc(c.couponQty)):'')+'</div>'+
     '<div><div class="dsec">거래처 정보 <span class="mut" style="font-weight:500;text-transform:none;letter-spacing:0">· 값 클릭 시 복사</span></div>'+cp('대표자',c.ceo)+row('진료과·종목',esc(c.bizRaw||c.biz))+row('지역',esc(c.region))+cp('주소',c.addr)+cp('사업자번호',c.biznum)+cp('이메일',c.email)+
-    '<div class="dsec">출고·수금</div>'+row('출고요청서 번호',esc(c.shipReqNo))+row('수금방법',esc(c.pay))+row('수금일',esc(c.payDate))+row('수수료 지급',esc(c.commission))+'</div>'+
+    '<div class="dsec">출고·수금</div>'+row('출고요청서 번호',esc(c.shipReqNo))+row('수금방법',esc(c.pay))+row('수금일',esc(c.payDate))+row('수수료',(commPaid(c)?'<b style="color:var(--green)">지급</b>':'미지급')+(c.commAmount?' · '+fmt(c.commAmount)+'원':''))+row('기안번호',esc(c.commission))+row('비고',esc(c.note))+'</div>'+
     '</div>'+
     '<div class="dsec"><i class="bi bi-sticky" style="margin-right:4px"></i>메모 · 공유</div><div id="memobox"><div class="mut" style="font-size:12px">불러오는 중…</div></div>'+
     '</div>';
@@ -612,7 +612,8 @@ const CFIELDS=[
  ['제품','product','list:products'],['계약금액(VAT포함)','amount','num'],['매출(원화환산)','krw','num'],['수량','qty','num'],
  ['담당자','rep','list:reps'],['채널','channel','sel:대리점,본사,딜러'],['상태','status','sel:완료,미납,납품,미분류'],['매출월(숫자)','saleMonth','num'],
  ['출고요청서 번호','shipReqNo','text'],
- ['수금방법','pay','list:pays'],['수금일','payDate','date'],['수수료 지급','commission','text'],
+ ['수금방법','pay','list:pays'],['수금일','payDate','date'],
+ ['수수료여부','commYN','sel:Y'],['수수료금액','commAmount','num'],['기안번호(수수료)','commission','text'],['비고','note','text2'],
  ['적립/쿠폰 지급일','couponDate','date'],['적립/쿠폰 수량','couponQty','text'],
  ['계약접수','dContract','date'],['출고예정(물류)','dShipDue','date'],['납품예정','dDeliverDue','date'],['납품완료','dDelivered','date'],['세금계산서','dTax','date']
 ];
@@ -696,7 +697,7 @@ async function renderMemo(no){
 async function postMemo(no){ const el=document.getElementById('memo-in'); const b=(el.value||'').trim(); if(!b)return; el.disabled=true; const ok=await postMsg('c:'+no,b); el.disabled=false; if(!ok){ toast('등록 실패'); return; } el.value=''; renderMemo(no); toast('메모 등록'); }
 
 /* ══ 워크데스크 — 시스템이 계산한 처리 큐 + 인라인 처리 ══ */
-let _qTab='late';
+let _qTab='coup';
 function qTab(t){ _qTab=t; render(); }
 /* 큐 필터 (제품·채널·담당·거래처·납품일 기간·남은작업) */
 let QF={prod:'',ch:'',rep:'',q:'',d1:'',d2:'',rem:''};
@@ -718,7 +719,7 @@ function qfBar(shown){
     sel('rep','전체 담당',[...new Set(ROWS.map(r=>r.rep))].filter(Boolean).sort())+
     (_qTab==='settle'?sel('rem','남은작업 전체',['계산서','쿠폰','수수료']):'')+
     '<input class="form-control form-control-sm" style="width:150px;font-size:11.5px;padding:3px 8px" placeholder="거래처 검색" value="'+esc(QF.q)+'" onchange="qfSet(\'q\',this.value)">'+
-    '<span class="mut" style="font-size:11px">'+((_qTab==='late'||_qTab==='due')?'납품예정':'납품일')+'</span>'+
+    '<span class="mut" style="font-size:11px">납품일</span>'+
     '<input type="date" class="form-control form-control-sm" style="width:130px;font-size:11.5px;padding:3px 6px" value="'+esc(QF.d1)+'" onchange="qfSet(\'d1\',this.value)">~'+
     '<input type="date" class="form-control form-control-sm" style="width:130px;font-size:11.5px;padding:3px 6px" value="'+esc(QF.d2)+'" onchange="qfSet(\'d2\',this.value)">'+
     '<button class="wt-tab" style="padding:3px 10px" onclick="qfReset()"><i class="bi bi-arrow-counterclockwise"></i>초기화</button>'+
@@ -735,30 +736,35 @@ function ilCoupon(no){ const d=(document.getElementById('il-cd-'+no)||{}).value;
 function ilComm(no){ const v=((document.getElementById('il-cm-'+no)||{}).value||'').trim(); if(!v||v==='영업전략파트-'){toast('참조코드를 입력하세요');return;} ilSave(no,{commission:v},'#'+no+' 수수료 참조 기록'); }
 function _abtn(label,fn,no,color){ return '<button class="btn btn-sm '+(color||'btn-outline-primary')+'" style="padding:1px 10px;font-size:11px" onclick="event.stopPropagation();'+fn+'('+no+')">'+label+'</button>'; }
 function vWork(){
-  const q=queues(), T=today0(), c=window.__chg;
-  const chgN=c?(c.neo.length+c.del.length+c.can.length):0;
-  const week=q.due.filter(r=>{const d=pd(r.dDeliverDue);return d&&(d-T)/864e5<=7;});
-  let h='<div class="wt-band wt-band-sm">'+
-    '<div class="wt-hero" style="cursor:pointer" onclick="qTab(\'late\')"><span class="l">납품 지연 <span class="mut" style="font-size:10px;font-weight:500">· 예정일 경과</span></span><b'+(q.late.length?' class="rd"':'')+'>'+q.late.length+'<span class="u">건</span></b></div>'+
-    fact('이번주 납품예정',week.length,'건','','',"qTab('due')")+
-    fact('쿠폰·적립금 지급',q.coup.length,'건','','am',"qTab('coup')")+
-    fact('수수료 미처리',q.comm.length,'건','','',"qTab('comm')")+
-    fact('세금계산서 미발행',q.tax.length,'건','','',"qTab('tax')")+
-    fact('지난 방문 이후 변동',chgN,'건','',chgN?'am':'',chgN?"showChg()":'')+
-  '</div>';
-  const g1=[['late','지연',q.late.length],['due','대기',q.due.length]];
-  const g2=[['settle','계약별 통합',q.settle.length],['coup','쿠폰만',q.coup.length],['comm','수수료만',q.comm.length],['tax','계산서만',q.tax.length]];
+  const q=queues();
+  // ── 생 리스트 (한눈에 · 수기 필드 인라인 자동저장) ──
+  const rows=qfApply(ROWS.slice().sort((a,b)=>a.no-b.no),'dDelivered');
+  const inS='class="form-control form-control-sm il-in" onclick="event.stopPropagation()"';
+  const chkY=v=>v?'<i class="bi bi-check-circle-fill" style="color:var(--green)"></i>':'<span class="mut">-</span>';
+  let h='<div class="wt-card" style="margin-bottom:14px"><div class="wt-st"><i class="bi bi-table"></i>계약 현황'+
+    '<span class="hint">행 클릭 상세 · 수금일·수수료·기안번호·비고는 칸에서 바로 입력(자동저장)</span></div>'+
+    qfBar(rows.length)+
+    (rows.length?'<div class="scroll" style="max-height:64vh"><table class="wt-tbl il-tbl2"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">사업자번호</th><th class="l">제품명</th><th>금액</th><th class="l">담당</th><th>납품일</th><th>수금</th><th>수금일</th><th>수수료</th><th>수수료금액</th><th class="l">기안번호</th><th>쿠폰</th><th class="l">비고</th></tr></thead><tbody>'+
+    rows.map(r=>'<tr onclick="detail('+r.no+')">'+
+      '<td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l tx2">'+esc(r.biznum||'-')+'</td><td class="l">'+esc(r.product)+'</td><td>'+fmt(r.amount)+'</td><td class="l">'+esc(r.rep)+'</td><td>'+esc(r.dDelivered||'-')+'</td>'+
+      '<td>'+chkY(has(r.payDate))+'</td>'+
+      '<td onclick="event.stopPropagation()"><input type="date" '+inS+' style="width:122px" value="'+esc(String(r.payDate||'').slice(0,10))+'" onchange="ilF('+r.no+',\'payDate\',this.value)"></td>'+
+      '<td onclick="event.stopPropagation()"><input type="checkbox" '+(commPaid(r)?'checked':'')+' onchange="ilF('+r.no+',\'commYN\',this.checked?\'Y\':\'\')"></td>'+
+      '<td onclick="event.stopPropagation()"><input type="number" '+inS+' style="width:92px;text-align:right" value="'+esc(r.commAmount!=null?r.commAmount:'')+'" placeholder="금액" onchange="ilF('+r.no+',\'commAmount\',this.value===\'\'?null:Number(this.value))"></td>'+
+      '<td onclick="event.stopPropagation()"><input '+inS+' style="width:140px" value="'+esc(r.commission&&r.commission!=='-'?r.commission:'')+'" placeholder="영업전략파트-" onchange="ilF('+r.no+',\'commission\',this.value)"></td>'+
+      '<td>'+(isCoupon(r.product)?(has(r.couponDate)?chkY(true):'<span style="color:var(--amber);font-weight:700;font-size:11px">미지급</span>'):'<span class="mut">-</span>')+'</td>'+
+      '<td onclick="event.stopPropagation()"><input '+inS+' style="width:120px" value="'+esc(r.note||'')+'" onchange="ilF('+r.no+',\'note\',this.value)"></td>'+
+      '</tr>').join('')+'</tbody></table></div>':'<div class="empty">조건에 맞는 계약이 없습니다</div>')+'</div>';
+  // ── 미니 처리 큐 (쿠폰·적립금 / 수수료) ──
   const tb=t=>'<button class="wt-tab'+(_qTab===t[0]?' on':'')+'" style="padding:3px 11px" onclick="qTab(\''+t[0]+'\')">'+t[1]+' '+t[2]+'</button>';
-  const body=qBody(q,week);
+  const body=qBody(q);
   h+='<div class="wt-card"><div class="wt-st"><i class="bi bi-lightning-charge"></i>처리 큐'+
-    '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap;align-items:center">'+
-    '<span class="mut" style="font-size:10.5px;font-weight:700">① 납품</span>'+g1.map(tb).join('')+
-    '<span style="width:1px;height:18px;background:var(--border);margin:0 5px"></span>'+
-    '<span class="mut" style="font-size:10.5px;font-weight:700">② 정산</span>'+g2.map(tb).join('')+'</span>'+
-    '<span class="hint">행 클릭 상세 · 바로 입력 저장</span></div>'+qfBar(window.__qShown||0)+body+'</div>';
+    '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+[['coup','쿠폰·적립금',q.coup.length],['comm','수수료',q.comm.length]].map(tb).join('')+'</span>'+
+    '<span class="hint">누락 방지 목록 · 일괄 지급 가능</span></div>'+body+'</div>';
   document.getElementById('view-work').innerHTML=h;
   if(_qTab==='coup')renderBulk();
 }
+async function ilF(no,key,val){ const c=ROWS.find(r=>r.no===no); if(!c)return; const p={}; p[key]=val; await ilSave(no,p,'#'+no+' 저장됨'); }
 function qBody(q,week){
   if(_qTab==='late'||_qTab==='due'){ const rows=qfApply(_qTab==='late'?q.late:q.due,'dDeliverDue'); window.__qShown=rows.length;
     if(!rows.length)return '<div class="empty">조건에 맞는 건이 없습니다</div>';
