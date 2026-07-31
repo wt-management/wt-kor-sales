@@ -860,20 +860,23 @@ function _needs(r){ const need=[]; if(!has(r.dDelivered))need.push('납품'); if
   if((r.channel==='대리점'||r.channel==='딜러')&&!commPaid(r))need.push('수수료'); return need; }
 function vClosing(){
   const months=[...new Set(ROWS.map(r=>r.saleMonth).filter(Boolean))].sort((a,b)=>a-b);
-  const m=(months.indexOf(_clsM)>=0)?_clsM:(months[months.length-1]||0); _clsM=m;
-  const rows=ROWS.filter(r=>r.saleMonth===m).sort((a,b)=>a.no-b.no);
+  const m=(_clsM==='all'||months.indexOf(_clsM)>=0)?_clsM:(months[months.length-1]||0); _clsM=m;
+  const rows=(m==='all'?ROWS.slice():ROWS.filter(r=>r.saleMonth===m)).sort((a,b)=>a.no-b.no);
   const open=rows.filter(r=>_needs(r).length);
   const nd=(r,k)=>_needs(r).indexOf(k)>=0;
   const show=_clsOpen?open:rows;
+  const mLabel=m==='all'?'전체':m+'월';
   let h='<div class="wt-band wt-band-sm">'+
-    '<div class="wt-hero"><span class="l">'+m+'월 완결률 <span class="mut" style="font-size:10px;font-weight:500">· 미완결 '+open.length+'건</span></span><b'+(open.length?'':' class="gr"')+'>'+pctv(rows.length-open.length,rows.length)+'<span class="u">%</span></b></div>'+
+    '<div class="wt-hero"><span class="l">'+mLabel+' 완결률 <span class="mut" style="font-size:10px;font-weight:500">· 미완결 '+open.length+'건</span></span><b'+(open.length?'':' class="gr"')+'>'+pctv(rows.length-open.length,rows.length)+'<span class="u">%</span></b></div>'+
     fact('계약 매출',eok(rows.reduce((s,x)=>s+(x.krw||0),0)).toFixed(1),'억','')+
     fact('납품 완료',rows.filter(r=>has(r.dDelivered)).length+'/'+rows.length,'','')+
     fact('계산서 발행',rows.filter(r=>has(r.dTax)).length+'/'+rows.length,'','')+
     fact('쿠폰·수수료 잔여',rows.filter(r=>nd(r,'쿠폰지급')).length+' · '+rows.filter(r=>nd(r,'수수료')).length,'','')+
   '</div>';
   h+='<div class="wt-card"><div class="wt-st"><i class="bi bi-calendar2-check"></i>월별 완결 체크'+
-    '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+months.map(x=>'<button class="wt-tab'+(x===m?' on':'')+'" style="padding:3px 11px" onclick="clsMonth('+x+')">'+x+'월</button>').join('')+'</span>'+
+    '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+
+    '<button class="wt-tab'+(m==='all'?' on':'')+'" style="padding:3px 11px" onclick="clsMonth(\'all\')">전체</button>'+
+    months.map(x=>'<button class="wt-tab'+(x===m?' on':'')+'" style="padding:3px 11px" onclick="clsMonth('+x+')">'+x+'월</button>').join('')+'</span>'+
     '<span class="hint"><label style="cursor:pointer"><input type="checkbox" '+(_clsOpen?'checked':'')+' onclick="clsToggle()"> 미완결만</label> · '+show.length+'건 · <button class="wt-tab" style="padding:2px 10px" onclick="closingCsv()"><i class="bi bi-download"></i>월 CSV</button></span></div>'+
     twoColTbl(show,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">담당</th><th>납품</th><th>계산서</th><th>쿠폰</th><th>수수료</th><th>수금</th>',
       r=>{const cpT=isCoupon(r.product),cmT=(r.channel==='대리점'||r.channel==='딜러');
@@ -882,11 +885,12 @@ function vClosing(){
   document.getElementById('view-closing').innerHTML=h;
 }
 function closingCsv(){
-  const rows=ROWS.filter(r=>r.saleMonth===_clsM).sort((a,b)=>a.no-b.no);
+  const rows=(_clsM==='all'?ROWS.slice():ROWS.filter(r=>r.saleMonth===_clsM)).sort((a,b)=>a.no-b.no);
+  const label=_clsM==='all'?'전체':_clsM+'월';
   const cols=[['no','NO'],['cust','거래처'],['biznum','사업자번호'],['product','제품'],['rep','담당자'],['channel','채널'],['amount','계약금액'],['krw','원화환산'],['dDelivered','납품일'],['dTax','세금계산서'],['couponDate','쿠폰지급일'],['couponQty','지급수량'],['commission','수수료참조'],['pay','수금방법'],['payDate','수금일'],['shipReqNo','출고요청서'],['status','상태']];
   let csv='﻿'+cols.map(c=>c[1]).join(',')+'\n';
   rows.forEach(r=>{ csv+=cols.map(c=>{let v=r[c[0]];v=(v==null?'':String(v)).replace(/"/g,'""');return /[",\n]/.test(v)?'"'+v+'"':v;}).join(',')+'\n'; });
-  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='국내영업_'+_clsM+'월_월말정리.csv'; a.click(); toast(_clsM+'월 CSV 내보내기 완료');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='국내영업_'+label+'_월말정리.csv'; a.click(); toast(label+' CSV 내보내기 완료');
 }
 
 /* ══ 데이터 업로드 (원본 계약 리스트 엑셀 → kor_contracts) ══
