@@ -752,14 +752,18 @@ function ilTax(no){ const v=(document.getElementById('il-tx-'+no)||{}).value; if
 function ilCoupon(no){ const d=(document.getElementById('il-cd-'+no)||{}).value; const q=((document.getElementById('il-cq-'+no)||{}).value||'').trim(); if(!d){toast('지급일을 선택하세요');return;} ilSave(no,{couponDate:d,couponQty:q},'#'+no+' 쿠폰·적립금 지급 기록'); }
 function ilComm(no){ const v=((document.getElementById('il-cm-'+no)||{}).value||'').trim(); if(!v||v==='영업전략파트-'){toast('참조코드를 입력하세요');return;} ilSave(no,{commission:v},'#'+no+' 수수료 참조 기록'); }
 function _abtn(label,fn,no,color){ return '<button class="btn btn-sm '+(color||'btn-outline-primary')+'" style="padding:1px 10px;font-size:11px" onclick="event.stopPropagation();'+fn+'('+no+')">'+label+'</button>'; }
+const W_COLS=[['no','#','rk'],['cust','거래처','l'],['biznum','사업자번호','l'],['product','제품명','l'],['amount','금액',''],['rep','담당','l'],
+  ['dDelivered','납품',''],['dTax','계산서',''],['couponDate','쿠폰',''],['commAmount','수수료',''],['payDate','수금',''],
+  ['dDelivered','납품일','l'],['payDate','수금일',''],['commAmount','수수료금액',''],['shipReqNo','출고요청서','l'],['note','비고','l']];
 function vWork(){
   // ── 생 리스트 (한눈에 · 수기 필드 인라인 자동저장) ──
-  const rows=qfApply(ROWS.slice().sort((a,b)=>a.no-b.no),'dDelivered');
+  const rows=qfApply(ROWS.slice().sort((a,b)=>{ let x=a[_sortKey],y=b[_sortKey]; if(typeof x==='string'||typeof y==='string'){x=x||'';y=y||'';return _sortDir*String(x).localeCompare(String(y));} return _sortDir*((x||0)-(y||0)); }),'dDelivered');
   const inS='class="form-control form-control-sm il-in" onclick="event.stopPropagation()"';
+  const wHead=W_COLS.map(c=>'<th class="'+c[2]+'" onclick="sortList(\''+c[0]+'\')">'+c[1]+(_sortKey===c[0]?(_sortDir>0?' ▲':' ▼'):'')+'</th>').join('');
   let h='<div class="wt-card"><div class="wt-st"><i class="bi bi-table"></i>계약 현황'+
-    '<span class="hint">행 클릭 상세 · 수금일·수수료·출고요청서·비고는 칸에서 바로 입력(자동저장)</span></div>'+
+    '<span class="hint">행 클릭 상세 · 열 제목 클릭 정렬 · 수금일·수수료·출고요청서·비고는 칸에서 바로 입력(자동저장)</span></div>'+
     qfBar(rows.length)+
-    (rows.length?'<div class="scroll" style="max-height:74vh"><table class="wt-tbl il-tbl2"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">사업자번호</th><th class="l">제품명</th><th>금액</th><th class="l">담당</th><th>납품</th><th>계산서</th><th>쿠폰</th><th>수수료</th><th>수금</th><th>납품일</th><th>수금일</th><th>수수료금액</th><th class="l">출고요청서</th><th class="l">비고</th></tr></thead><tbody>'+
+    (rows.length?'<div class="scroll" style="max-height:74vh"><table class="wt-tbl il-tbl2"><thead><tr>'+wHead+'</tr></thead><tbody>'+
     rows.map(r=>{const cpT=isCoupon(r.product);return '<tr onclick="detail('+r.no+')">'+
       '<td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l tx2">'+esc(r.biznum||'-')+'</td><td class="l">'+esc(r.product)+'</td><td>'+fmt(r.amount)+'</td><td class="l">'+esc(r.rep)+'</td>'+
       '<td>'+chk(has(r.dDelivered))+'</td>'+
