@@ -754,9 +754,9 @@ function vWork(){
   const rows=qfApply(ROWS.slice().sort((a,b)=>a.no-b.no),'dDelivered');
   const inS='class="form-control form-control-sm il-in" onclick="event.stopPropagation()"';
   let h='<div class="wt-card"><div class="wt-st"><i class="bi bi-table"></i>계약 현황'+
-    '<span class="hint">행 클릭 상세 · 수금일·수수료·기안번호·비고는 칸에서 바로 입력(자동저장)</span></div>'+
+    '<span class="hint">행 클릭 상세 · 수금일·수수료·출고요청서·비고는 칸에서 바로 입력(자동저장)</span></div>'+
     qfBar(rows.length)+
-    (rows.length?'<div class="scroll" style="max-height:74vh"><table class="wt-tbl il-tbl2"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">사업자번호</th><th class="l">제품명</th><th>금액</th><th class="l">담당</th><th>납품</th><th>계산서</th><th>쿠폰</th><th>수수료</th><th>수금</th><th>납품일</th><th>수금일</th><th>수수료금액</th><th class="l">기안번호</th><th class="l">비고</th></tr></thead><tbody>'+
+    (rows.length?'<div class="scroll" style="max-height:74vh"><table class="wt-tbl il-tbl2"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">사업자번호</th><th class="l">제품명</th><th>금액</th><th class="l">담당</th><th>납품</th><th>계산서</th><th>쿠폰</th><th>수수료</th><th>수금</th><th>납품일</th><th>수금일</th><th>수수료금액</th><th class="l">출고요청서</th><th class="l">비고</th></tr></thead><tbody>'+
     rows.map(r=>{const cpT=isCoupon(r.product);return '<tr onclick="detail('+r.no+')">'+
       '<td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l tx2">'+esc(r.biznum||'-')+'</td><td class="l">'+esc(r.product)+'</td><td>'+fmt(r.amount)+'</td><td class="l">'+esc(r.rep)+'</td>'+
       '<td>'+chk(has(r.dDelivered))+'</td>'+
@@ -767,7 +767,7 @@ function vWork(){
       '<td class="l">'+esc(r.dDelivered||'-')+'</td>'+
       '<td onclick="event.stopPropagation()"><input type="date" '+inS+' style="width:122px" value="'+esc(String(r.payDate||'').slice(0,10))+'" onchange="ilF('+r.no+',\'payDate\',this.value)"></td>'+
       '<td onclick="event.stopPropagation()"><input type="text" inputmode="numeric" '+inS+' style="width:92px;text-align:right" value="'+esc(r.commAmount!=null?fmt(r.commAmount):'')+'" placeholder="금액" onchange="ilF('+r.no+',\'commAmount\',numOrNull(this.value))"></td>'+
-      '<td onclick="event.stopPropagation()"><input '+inS+' style="width:140px" value="'+esc(r.commission&&r.commission!=='-'?r.commission:'')+'" placeholder="영업전략파트-" onchange="ilF('+r.no+',\'commission\',this.value)"></td>'+
+      '<td onclick="event.stopPropagation()"><input '+inS+' style="width:140px" value="'+esc(r.shipReqNo&&r.shipReqNo!=='-'?r.shipReqNo:'')+'" placeholder="출고요청서 번호" onchange="ilF('+r.no+',\'shipReqNo\',this.value)"></td>'+
       '<td onclick="event.stopPropagation()"><input '+inS+' style="width:220px" value="'+esc(r.note||'')+'" onchange="ilF('+r.no+',\'note\',this.value)"></td>'+
       '</tr>';}).join('')+'</tbody></table></div>':'<div class="empty">조건에 맞는 계약이 없습니다</div>')+'</div>';
   document.getElementById('view-work').innerHTML=h;
