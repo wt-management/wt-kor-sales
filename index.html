@@ -1070,11 +1070,10 @@ async function commitUpload(){
       const {error}=await _sb.from('kor_contracts').insert(rows);
       if(error)errs.push('신규 추가 실패: '+error.message); else insOk=rows.length;
     }
-    if(diff.toUpdate.length){
-      const rows=diff.toUpdate.map(x=>{ const cur=ROWS.find(r=>r.no===x.no)||{}; const d=Object.assign({},cur,x.patch); delete d._id; delete d._month;
-        return {id:x.id,no:x.no,data:d,updated_at:new Date().toISOString(),updated_by:MENAME}; });
-      const {error}=await _sb.from('kor_contracts').upsert(rows,{onConflict:'id'});
-      if(error)errs.push('업데이트 실패: '+error.message); else updOk=rows.length;
+    for(const x of diff.toUpdate){
+      const cur=ROWS.find(r=>r.no===x.no)||{}; const d=Object.assign({},cur,x.patch); delete d._id; delete d._month;
+      const {error}=await _sb.from('kor_contracts').update({data:d,updated_at:new Date().toISOString(),updated_by:MENAME}).eq('id',x.id);
+      if(error)errs.push('#'+x.no+' 업데이트 실패: '+error.message); else updOk++;
     }
   }catch(e){ errs.push(e.message||String(e)); }
   await loadData(); initFilters(); buildNav();
