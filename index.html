@@ -365,7 +365,7 @@ function grp(a,k){const m={};a.forEach(x=>{const v=x[k]||'미분류';(m[v]=m[v]|
 function closeModal(){document.getElementById('modal').classList.remove('on');}
 function has(v){return !!(v&&String(v).trim()&&String(v).trim()!=='-');}
 function numOrNull(s){ s=String(s||'').replace(/[^0-9.-]/g,''); if(s==='')return null; const n=Number(s); return isNaN(n)?null:n; }
-function chk(v){return v?'<i class="bi bi-check-circle-fill" style="color:var(--green)"></i>':'<i class="bi bi-x-circle" style="color:var(--red)"></i>';}
+function chk(v,color){return v?'<i class="bi bi-check-circle-fill" style="color:var(--'+(color||'green')+')"></i>':'<i class="bi bi-x-circle" style="color:var(--red)"></i>';}
 function pd(s){ if(!has(s))return null; const d=new Date(String(s).slice(0,10)); return isNaN(d)?null:d; }
 function today0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
 function isOli(p){ return /^Oligio/i.test(p||''); }
@@ -562,7 +562,7 @@ function twoColTbl(rows,head,rowFn,maxH){ if(!rows.length)return '<div class="em
   return '<div class="scroll" style="max-height:'+(maxH||64)+'vh"><div class="wt-grid g-2" style="align-items:start;gap:0 26px"><div>'+t(L)+'</div><div>'+(R2.length?t(R2):'')+'</div></div></div>'; }
 
 /* ── 판매수수료 (대리점/딜러, 엑셀 수수료 지급 필드 기반) ── */
-function commPaid(r){ return r.commYN==='Y'||(has(r.commission)&&String(r.commission).trim()!=='-')||(has(r.payDate)&&r.commAmount!=null); }
+function commPaid(r){ return r.commYN==='Y'||(has(r.commission)&&String(r.commission).trim()!=='-')||r.commAmount!=null; }
 /* ── 계약 리스트 ── */
 let _sortKey='no', _sortDir=1;
 function sortList(k){ if(_sortKey===k)_sortDir*=-1; else{_sortKey=k;_sortDir=1;} render(); }
@@ -765,7 +765,7 @@ function vWork(){
       '<td>'+chk(has(r.dDelivered))+'</td>'+
       '<td>'+chk(has(r.dTax))+'</td>'+
       '<td>'+(cpT?chk(has(r.couponDate)):'<span class="mut">-</span>')+'</td>'+
-      '<td>'+chk(commPaid(r))+'</td>'+
+      '<td>'+chk(commPaid(r),'amber')+'</td>'+
       '<td>'+chk(has(r.payDate))+'</td>'+
       '<td class="l">'+esc(r.dDelivered||'-')+'</td>'+
       '<td onclick="event.stopPropagation()"><input type="date" '+inS+' style="width:122px" value="'+esc(String(r.payDate||'').slice(0,10))+'" onchange="ilF('+r.no+',\'payDate\',this.value)"></td>'+
