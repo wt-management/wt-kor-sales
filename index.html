@@ -362,6 +362,7 @@ function toast(m){const t=document.getElementById('toast');t.textContent=m;t.sty
 function grp(a,k){const m={};a.forEach(x=>{const v=x[k]||'미분류';(m[v]=m[v]||[]).push(x);});return m;}
 function closeModal(){document.getElementById('modal').classList.remove('on');}
 function has(v){return !!(v&&String(v).trim()&&String(v).trim()!=='-');}
+function numOrNull(s){ s=String(s||'').replace(/[^0-9.-]/g,''); if(s==='')return null; const n=Number(s); return isNaN(n)?null:n; }
 function chk(v){return v?'<i class="bi bi-check-circle-fill" style="color:var(--green)"></i>':'<i class="bi bi-x-circle" style="color:var(--red)"></i>';}
 function pd(s){ if(!has(s))return null; const d=new Date(String(s).slice(0,10)); return isNaN(d)?null:d; }
 function today0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
@@ -765,7 +766,7 @@ function vWork(){
       '<td>'+chk(has(r.payDate))+'</td>'+
       '<td class="l">'+esc(r.dDelivered||'-')+'</td>'+
       '<td onclick="event.stopPropagation()"><input type="date" '+inS+' style="width:122px" value="'+esc(String(r.payDate||'').slice(0,10))+'" onchange="ilF('+r.no+',\'payDate\',this.value)"></td>'+
-      '<td onclick="event.stopPropagation()"><input type="number" '+inS+' style="width:92px;text-align:right" value="'+esc(r.commAmount!=null?r.commAmount:'')+'" placeholder="금액" onchange="ilF('+r.no+',\'commAmount\',this.value===\'\'?null:Number(this.value))"></td>'+
+      '<td onclick="event.stopPropagation()"><input type="text" inputmode="numeric" '+inS+' style="width:92px;text-align:right" value="'+esc(r.commAmount!=null?fmt(r.commAmount):'')+'" placeholder="금액" onchange="ilF('+r.no+',\'commAmount\',numOrNull(this.value))"></td>'+
       '<td onclick="event.stopPropagation()"><input '+inS+' style="width:140px" value="'+esc(r.commission&&r.commission!=='-'?r.commission:'')+'" placeholder="영업전략파트-" onchange="ilF('+r.no+',\'commission\',this.value)"></td>'+
       '<td onclick="event.stopPropagation()"><input '+inS+' style="width:220px" value="'+esc(r.note||'')+'" onchange="ilF('+r.no+',\'note\',this.value)"></td>'+
       '</tr>';}).join('')+'</tbody></table></div>':'<div class="empty">조건에 맞는 계약이 없습니다</div>')+'</div>';
