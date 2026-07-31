@@ -110,6 +110,15 @@ body{min-height:100vh;background:var(--bg);font-family:'Noto Sans KR',sans-serif
 .wt-tbl .nm{font-weight:600;color:var(--ink)}
 .wt-tbl b{color:var(--ink);font-weight:700}
 .wt-tbl th:not(.l),.wt-tbl td:not(.l){width:1px}
+/* 정산 인라인 표: 입력 컬럼 고정폭 정렬 + 촘촘 */
+.il-tbl tbody td{padding:4px 8px}
+.il-tbl td:nth-child(6),.il-tbl th:nth-child(6){width:280px}
+.il-tbl td:nth-child(7),.il-tbl th:nth-child(7){width:190px}
+.il-tbl td:nth-child(8),.il-tbl th:nth-child(8){width:165px}
+.il-row{display:inline-flex;gap:4px;align-items:center;white-space:nowrap}
+.il-lb{font-size:10.5px;font-weight:700;color:var(--mut);width:44px;text-align:right}
+.il-in{padding:2px 6px;font-size:11.5px;display:inline-block}
+.il-ok{padding:1px 9px;font-size:11px}
 .mut{color:var(--mut)}.tx2{color:var(--text-2)}
 .scroll{overflow:auto;max-height:64vh}
 .badge-st{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;white-space:nowrap}
@@ -767,15 +776,14 @@ function qBody(q,week){
   }
   if(_qTab==='settle'){ const rows=qfApply(q.settle,'dDelivered'); window.__qShown=rows.length;
     if(!rows.length)return '<div class="empty"><i class="bi bi-check-circle" style="color:var(--green)"></i> 조건에 맞는 정산 잔여 작업이 없습니다</div>';
-    const inD='class="form-control form-control-sm" style="width:126px;padding:2px 6px;font-size:11.5px;display:inline-block"';
-    const grp=(label,inner)=>'<span style="display:inline-flex;gap:3px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:2px 5px"><span class="mut" style="font-size:10.5px;font-weight:700">'+label+'</span>'+inner+'</span>';
-    return '<div class="scroll" style="max-height:74vh"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">채널</th><th>납품일</th><th class="l">바로 입력 · ✓ 저장</th></tr></thead><tbody>'+
+    const inS='class="form-control form-control-sm il-in"';
+    const ok=(cls,fn,no)=>'<button class="btn btn-sm '+cls+' il-ok" onclick="'+fn+'('+no+')">✓</button>';
+    const dash='<span class="mut">—</span>';
+    return '<div class="scroll" style="max-height:74vh"><table class="wt-tbl il-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">채널</th><th>납품일</th><th class="l">쿠폰·적립금 <span class="mut" style="font-weight:500">지급일·수량</span></th><th class="l">수수료 참조</th><th class="l">계산서 발행일</th></tr></thead><tbody>'+
       rows.map(r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.channel)+'</td><td>'+esc(r.dDelivered||'-')+'</td>'+
-        '<td class="l" onclick="event.stopPropagation()"><span style="display:inline-flex;gap:7px;flex-wrap:wrap;align-items:center">'+
-        (r._rem.indexOf('쿠폰')>=0?grp(couponType(r.product),'<input type="date" id="il-cd-'+r.no+'" '+inD+' value="'+todayStr()+'"><input id="il-cq-'+r.no+'" class="form-control form-control-sm" style="width:62px;padding:2px 6px;font-size:11.5px;display:inline-block" placeholder="수량"><button class="btn btn-sm btn-warning" style="padding:1px 9px;font-size:11px" onclick="ilCoupon('+r.no+')">✓</button>'):'')+
-        (r._rem.indexOf('수수료')>=0?grp('수수료','<input id="il-cm-'+r.no+'" class="form-control form-control-sm" style="width:158px;padding:2px 6px;font-size:11.5px;display:inline-block" value="영업전략파트-"><button class="btn btn-sm btn-outline-primary" style="padding:1px 9px;font-size:11px" onclick="ilComm('+r.no+')">✓</button>'):'')+
-        (r._rem.indexOf('계산서')>=0?grp('계산서','<input type="date" id="il-tx-'+r.no+'" '+inD+' value="'+todayStr()+'"><button class="btn btn-sm btn-outline-primary" style="padding:1px 9px;font-size:11px" onclick="ilTax('+r.no+')">✓</button>'):'')+
-        '</span></td></tr>').join('')+'</tbody></table></div>';
+        '<td class="l" onclick="event.stopPropagation()">'+(r._rem.indexOf('쿠폰')>=0?'<span class="il-row"><span class="il-lb">'+couponType(r.product).replace(' 쿠폰','')+'</span><input type="date" id="il-cd-'+r.no+'" '+inS+' style="width:122px" value="'+todayStr()+'"><input id="il-cq-'+r.no+'" '+inS+' style="width:58px" placeholder="수량">'+ok('btn-warning','ilCoupon',r.no)+'</span>':dash)+'</td>'+
+        '<td class="l" onclick="event.stopPropagation()">'+(r._rem.indexOf('수수료')>=0?'<span class="il-row"><input id="il-cm-'+r.no+'" '+inS+' style="width:148px" value="영업전략파트-">'+ok('btn-outline-primary','ilComm',r.no)+'</span>':dash)+'</td>'+
+        '<td class="l" onclick="event.stopPropagation()">'+(r._rem.indexOf('계산서')>=0?'<span class="il-row"><input type="date" id="il-tx-'+r.no+'" '+inS+' style="width:122px" value="'+todayStr()+'">'+ok('btn-outline-primary','ilTax',r.no)+'</span>':dash)+'</td></tr>').join('')+'</tbody></table></div>';
   }
   if(_qTab==='comm'){ const rows=qfApply(q.comm,'dDelivered'); window.__qShown=rows.length; if(!rows.length)return '<div class="empty">조건에 맞는 건이 없습니다</div>'; return twoColTbl(rows,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">채널</th><th class="l">담당</th><th></th>',
       r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.channel)+'</td><td class="l">'+esc(r.rep)+'</td><td>'+_abtn('참조입력','quickComm',r.no)+'</td></tr>',74); }
