@@ -936,9 +936,9 @@ function xfFindSheet(wb){ const names=wb.SheetNames.slice();
   names.sort((a,b)=>(/^국내_\d{2}$/.test(b)?1:0)-(/^국내_\d{2}$/.test(a)?1:0)||b.localeCompare(a));
   for(const name of names){ const ws=wb.Sheets[name]; if(!ws)continue; const hr=xfFindHeaderRow(ws); if(hr!=null)return {name:name,ws:ws,headerRow:hr}; }
   return null; }
-function xfBuildColMap(ws,headerRow,range){ const map={},unmapped=[];
+function xfBuildColMap(ws,headerRow,range,hmap){ hmap=hmap||XF_HEADER_MAP; const map={},unmapped=[];
   for(let c=range.s.c;c<=range.e.c;c++){ const cell=ws[XLSX.utils.encode_cell({r:headerRow,c:c})]; if(!cell||cell.v==null||String(cell.v).trim()==='')continue;
-    const norm=String(cell.v).replace(/\s+/g,''); const field=XF_HEADER_MAP[norm]; if(field)map[c]=field; else unmapped.push(norm); }
+    const norm=String(cell.v).replace(/\s+/g,''); const field=hmap[norm]; if(field)map[c]=field; else unmapped.push(norm); }
   return {map:map,unmapped:unmapped}; }
 function xfExtractRows(ws,headerRow,colMap,range){ let custCol=null; for(const c in colMap){ if(colMap[c]==='cust'){custCol=+c;break;} }
   const out=[];
@@ -991,10 +991,90 @@ function xfBuildDiff(parsed){
   });
   return {toInsert:toInsert,toUpdate:toUpdate,conflicts:conflicts,mismatches:mismatches,dupNo:dupNo,badRows:badRows,sumAmount:sumAmount,total:parsed.length};
 }
+/* ══ 수수료 정리 엑셀 → 수금일 채움 (판매지급 수수료 정리.xlsx '판매수수료 지급' 시트 등)
+   정책: 이미 수금일이 있는 계약은 절대 건드리지 않는다. 기안번호+거래처+제품명+금액이
+   모두 일치하는 후보가 정확히 1건일 때만 그 행의 입금일로 채운다(모호하면 건너뛰고 목록에만 표시). */
+const XF2_HEADER_MAP={'거래처':'cust','품명':'product','제품가격(VAT포함)':'amount','입금일':'payDate','일반지출결의서문서번호':'commission'};
+const XF2_REQUIRED=['거래처','품명','입금일','일반지출결의서문서번호'];
+function xfFindCommHeaderRow(ws){ const ref=ws['!ref']; if(!ref)return null; const range=XLSX.utils.decode_range(ref);
+  const maxR=Math.min(range.e.r,14);
+  for(let r=range.s.r;r<=maxR;r++){ const found={};
+    for(let c=range.s.c;c<=range.e.c;c++){ const cell=ws[XLSX.utils.encode_cell({r:r,c:c})]; const v=cell&&cell.v!=null?String(cell.v).replace(/\s+/g,''):'';
+      if(v)found[v]=true; }
+    if(XF2_REQUIRED.every(function(h){return found[h];}))return r; }
+  return null; }
+function xfFindCommSheet(wb){ let best=null;
+  for(const name of wb.SheetNames){ const ws=wb.Sheets[name]; if(!ws||!ws['!ref'])continue; const hr=xfFindCommHeaderRow(ws); if(hr==null)continue;
+    const range=XLSX.utils.decode_range(ws['!ref']); const rows=range.e.r-hr;
+    if(!best||rows>best.rows)best={name:name,ws:ws,headerRow:hr,rows:rows}; }
+  return best; }
+function xfNormProduct(s){ s=String(s||'').trim().replace(/\s+/g,' '); const i=s.indexOf('/'); if(i>=0)s=s.slice(0,i).trim(); return s; }
+function xfParseCommRow(r){ const s=xfCellStr;
+  return {cust:s(r.cust),product:s(r.product),amount:xfNum(s(r.amount)),payDate:xfDateFromCell(r.payDate),commission:s(r.commission)}; }
+function xfBuildCommDiff(parsed){
+  const rows=parsed.filter(function(p){return p.cust&&p.product&&p.amount!=null;});
+  const toFill=[],ambiguous=[]; let matchedNoPayYet=0;
+  ROWS.forEach(function(site){
+    if(has(site.payDate))return; // 이미 수금일 있으면 건드리지 않음
+    const sc=xfNormCust(site.cust),sp=xfNormProduct(site.product),sa=Number(site.amount);
+    const cands=rows.filter(function(p){
+      const pc=xfNormCust(p.cust);
+      if(sc!==pc&&sc.indexOf(pc)<0&&pc.indexOf(sc)<0)return false;
+      if(xfNormProduct(p.product)!==sp)return false;
+      if(Number(p.amount)!==sa)return false;
+      return true; });
+    if(!cands.length)return;
+    let m=null;
+    if(cands.length===1)m=cands[0];
+    else if(site.commission){ const byC=cands.filter(function(c){return c.commission&&c.commission===site.commission;}); if(byC.length===1)m=byC[0]; }
+    if(!m){ ambiguous.push({no:site.no,cust:site.cust,product:site.product,n:cands.length}); return; }
+    if(site.commission&&m.commission&&site.commission!==m.commission){ ambiguous.push({no:site.no,cust:site.cust,product:site.product,reason:'기안번호 불일치: 사이트 '+site.commission+' ↔ 엑셀 '+m.commission}); return; }
+    if(!has(m.payDate)){ matchedNoPayYet++; return; } // 매칭은 됐지만 아직 입금 전 — 정상, 채울 값 없음
+    toFill.push({id:site._id,no:site.no,cust:site.cust,product:site.product,amount:site.amount,payDate:m.payDate,commission:m.commission||''});
+  });
+  return {toFill:toFill,ambiguous:ambiguous,matchedNoPayYet:matchedNoPayYet,totalRows:rows.length};
+}
+function renderCommPreview(diff){
+  const res=document.getElementById('xf-result'); if(!res)return;
+  let h='<div class="wt-grid g-2" style="margin-bottom:16px">'+
+    fact('엑셀 수수료 행',diff.totalRows,'건','')+
+    fact('수금일 채워짐',diff.toFill.length,'건','미수금 → 수금 확인')+
+    fact('입금 전(정상)',diff.matchedNoPayYet,'건','매칭됐지만 입금일 없음')+
+    fact('확인 필요',diff.ambiguous.length,'건','후보 모호·기안번호 불일치')+
+    '</div>';
+  if(diff.ambiguous.length){
+    h+='<div class="warnnote" style="margin-bottom:14px"><b><i class="bi bi-exclamation-triangle"></i> 자동으로 채우지 않음 ('+diff.ambiguous.length+'건)</b>'+
+      '<div style="margin-top:6px;font-size:11.5px">'+diff.ambiguous.slice(0,30).map(function(m){return '#'+m.no+' '+esc(m.cust)+' · '+esc(m.product)+(m.reason?' — '+esc(m.reason):' — 후보 '+m.n+'건, 특정 불가');}).join('<br>')+'</div></div>';
+  }
+  if(diff.toFill.length){
+    h+='<div class="scroll" style="max-height:320px;margin-bottom:16px"><table class="wt-tbl"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th>금액</th><th class="l">기안번호</th><th>채워질 수금일</th></tr></thead><tbody>'+
+      diff.toFill.map(function(f){return '<tr onclick="detail('+f.no+')"><td class="rk">'+f.no+'</td><td class="l nm">'+esc(f.cust)+'</td><td class="l">'+esc(f.product)+'</td><td>'+fmt(f.amount)+'</td><td class="l tx2">'+esc(f.commission||'-')+'</td><td style="color:var(--green);font-weight:700">'+esc(f.payDate)+'</td></tr>';}).join('')+
+      '</tbody></table></div>';
+  }
+  h+='<div class="cform-foot"><span class="mut" style="font-size:12px">'+(diff.toFill.length?('수금일 '+diff.toFill.length+'건이 반영됩니다'):'반영할 변경사항이 없습니다')+'</span>'+
+    (diff.toFill.length?'<button class="btn btn-primary btn-sm" onclick="commitCommUpload()"><i class="bi bi-check-lg"></i> 적용하기</button>':'')+'</div>';
+  res.innerHTML=h;
+}
+async function commitCommUpload(){
+  const diff=window.__xfCommDiff; if(!diff)return;
+  const res=document.getElementById('xf-result'); if(!res)return;
+  const btn=res.querySelector('.cform-foot button'); if(btn){ btn.disabled=true; btn.textContent='적용 중…'; }
+  let ok=0; const errs=[];
+  for(const f of diff.toFill){
+    const cur=ROWS.find(function(r){return r.no===f.no;})||{}; const d=Object.assign({},cur,{payDate:f.payDate}); delete d._id; delete d._month;
+    const {error}=await _sb.from('kor_contracts').update({data:d,updated_at:new Date().toISOString(),updated_by:MENAME}).eq('id',f.id);
+    if(error)errs.push('#'+f.no+' 실패: '+error.message); else ok++;
+  }
+  await loadData(); initFilters(); buildNav();
+  res.innerHTML='<div class="wt-card" style="border-color:'+(errs.length?'var(--red)':'var(--green)')+'"><div class="wt-st"><i class="bi '+(errs.length?'bi-exclamation-triangle':'bi-check-circle')+'" style="color:'+(errs.length?'var(--red)':'var(--green)')+'"></i>수금일 반영 완료</div>'+
+    '<div style="font-size:13px;line-height:1.9">수금일 반영 <b>'+ok+'</b>건'+(errs.length?('<br><span style="color:var(--red)">오류: '+errs.map(esc).join(' / ')+'</span>'):'')+'</div>'+
+    '<div style="margin-top:12px"><button class="btn btn-outline-secondary btn-sm" onclick="go(\'work\')">워크데스크에서 확인</button></div></div>';
+  window.__xfCommDiff=null;
+}
 function vUpload(){
   const h='<div class="wt-card"><div class="wt-st"><i class="bi bi-cloud-upload"></i>데이터 업로드'+
-    '<span class="hint">원텍 거래처별 계약체결 관리 리스트 엑셀로 계약 현황을 갱신합니다</span></div>'+
-    '<div class="warnnote" style="margin-bottom:14px">비어 있는 항목만 채웁니다. 이미 값이 있는 항목이 엑셀 값과 다르면 자동으로 바꾸지 않고 아래 "확인 필요" 목록으로 보여드려요 — 실시간으로 입력해둔 수금·수수료·비고 같은 값이 지워질 걱정 없이 올리셔도 됩니다. 반영 전 미리보기를 꼭 확인해주세요.</div>'+
+    '<span class="hint">계약체결 리스트 엑셀 또는 판매지급 수수료 정리 엑셀을 인식해 반영합니다</span></div>'+
+    '<div class="warnnote" style="margin-bottom:14px">비어 있는 항목만 채웁니다. 이미 값이 있는 항목이 엑셀 값과 다르면 자동으로 바꾸지 않고 아래 "확인 필요" 목록으로 보여드려요 — 실시간으로 입력해둔 수금·수수료·비고 같은 값이 지워질 걱정 없이 올리셔도 됩니다. "판매지급 수수료 정리" 엑셀을 올리면 기안번호·거래처·제품명·금액이 일치하는 계약의 수금일(입금일)만 채워드려요. 반영 전 미리보기를 꼭 확인해주세요.</div>'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">'+
     '<input type="file" id="xf-file" accept=".xlsx,.xls" style="display:none" onchange="onXlsxFile(event)">'+
     '<button class="btn btn-primary btn-sm" onclick="document.getElementById(\'xf-file\').click()"><i class="bi bi-file-earmark-excel"></i> 엑셀 파일 선택</button>'+
@@ -1010,8 +1090,23 @@ async function onXlsxFile(evt){
   try{
     const buf=await file.arrayBuffer();
     const wb=XLSX.read(buf,{type:'array'});
+    const foundComm=xfFindCommSheet(wb);
+    if(foundComm){
+      const range2=XLSX.utils.decode_range(foundComm.ws['!ref']);
+      const cm2=xfBuildColMap(foundComm.ws,foundComm.headerRow,range2,XF2_HEADER_MAP);
+      const rawRows2=xfExtractRows(foundComm.ws,foundComm.headerRow,cm2.map,range2);
+      if(rawRows2.length){
+        const parsed2=rawRows2.map(xfParseCommRow);
+        const diff2=xfBuildCommDiff(parsed2);
+        diff2.sheetName=foundComm.name;
+        window.__xfCommDiff=diff2;
+        renderCommPreview(diff2);
+        evt.target.value='';
+        return;
+      }
+    }
     const found=xfFindSheet(wb);
-    if(!found){ res.innerHTML='<div class="empty">엑셀에서 "거래처"·"사업자등록번호" 컬럼이 있는 표를 찾지 못했습니다. 원본 계약 리스트 파일이 맞는지 확인해주세요.</div>'; return; }
+    if(!found){ res.innerHTML='<div class="empty">엑셀에서 "거래처"·"사업자등록번호" 컬럼이 있는 표(계약 리스트) 또는 "거래처"·"품명"·"입금일"·"일반 지출 결의서 문서번호" 컬럼이 있는 표(수수료 정리)를 찾지 못했습니다. 지원되는 파일이 맞는지 확인해주세요.</div>'; return; }
     const range=XLSX.utils.decode_range(found.ws['!ref']);
     const cm=xfBuildColMap(found.ws,found.headerRow,range);
     const fields=Object.keys(cm.map).map(k=>cm.map[k]);
