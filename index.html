@@ -765,7 +765,7 @@ function vWork(){
       '<td>'+chk(has(r.dDelivered))+'</td>'+
       '<td>'+chk(has(r.dTax))+'</td>'+
       '<td>'+(cpT?chk(has(r.couponDate)):'<span class="mut">-</span>')+'</td>'+
-      '<td onclick="event.stopPropagation()"><input type="checkbox" '+(commPaid(r)?'checked':'')+' onchange="ilF('+r.no+',\'commYN\',this.checked?\'Y\':\'\')"></td>'+
+      '<td>'+chk(commPaid(r))+'</td>'+
       '<td>'+chk(has(r.payDate))+'</td>'+
       '<td class="l">'+esc(r.dDelivered||'-')+'</td>'+
       '<td onclick="event.stopPropagation()"><input type="date" '+inS+' style="width:122px" value="'+esc(String(r.payDate||'').slice(0,10))+'" onchange="ilF('+r.no+',\'payDate\',this.value)"></td>'+
