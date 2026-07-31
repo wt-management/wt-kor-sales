@@ -706,7 +706,7 @@ function vWork(){
 function qBody(q,week){
   if(_qTab==='late'||_qTab==='due'){ const rows=_qTab==='late'?q.late:q.due;
     return twoColTbl(rows,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th>납품예정</th><th class="l">담당</th><th></th>',
-      r=>{const late=_qTab==='late';return '<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td'+(late?' style="color:var(--red);font-weight:700"':'')+'>'+esc(r.dDeliverDue||'미정')+'</td><td class="l">'+esc(r.rep)+'</td><td>'+_abtn('납품완료','quickDeliver',r.no,'btn-success')+'</td></tr>';},56);
+      r=>{const late=_qTab==='late';return '<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td'+(late?' style="color:var(--red);font-weight:700"':'')+'>'+esc(r.dDeliverDue||'미정')+'</td><td class="l">'+esc(r.rep)+'</td><td>'+_abtn('납품완료','quickDeliver',r.no,'btn-success')+'</td></tr>';},74);
   }
   if(_qTab==='coup'){ window.__coupSel=window.__coupSel||new Set();
     const ctypes=['전체','적립금','쿠폰','카트리지 쿠폰'];
@@ -714,13 +714,13 @@ function qBody(q,week){
     return '<div style="margin-bottom:9px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">'+ctypes.map(t=>{const n=t==='전체'?q.coup.length:q.coup.filter(r=>couponType(r.product)===t).length;return '<button class="wt-tab'+(t===_coupType?' on':'')+'" style="padding:3px 11px" onclick="coupType(\''+t+'\')">'+t+' '+n+'</button>';}).join('')+
       (filt.length?'<label style="font-size:12px;color:var(--text-2);cursor:pointer;margin-left:8px"><input type="checkbox" id="selall" onclick="coupSelAll(this.checked)"> 전체선택</label>':'')+'</div><div id="bulkbar"></div>'+
       (filt.length?twoColTbl(filt,'<th style="width:26px"></th><th class="rk">#</th><th class="l">거래처</th><th class="l">제품·종류</th><th>납품일</th><th></th>',
-        r=>'<tr onclick="detail('+r.no+')"><td onclick="event.stopPropagation()"><input type="checkbox" class="coupchk" data-no="'+r.no+'" onclick="coupSel('+r.no+',this.checked)"'+(window.__coupSel.has(r.no)?' checked':'')+'></td><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+' <span class="badge-st" style="color:#2455c4;background:#eef4fd">'+couponType(r.product)+'</span></td><td>'+esc(r.dDelivered||'-')+'</td><td>'+_abtn('지급','payCoupon',r.no,'btn-warning')+'</td></tr>',56)
+        r=>'<tr onclick="detail('+r.no+')"><td onclick="event.stopPropagation()"><input type="checkbox" class="coupchk" data-no="'+r.no+'" onclick="coupSel('+r.no+',this.checked)"'+(window.__coupSel.has(r.no)?' checked':'')+'></td><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+' <span class="badge-st" style="color:#2455c4;background:#eef4fd">'+couponType(r.product)+'</span></td><td>'+esc(r.dDelivered||'-')+'</td><td>'+_abtn('지급','payCoupon',r.no,'btn-warning')+'</td></tr>',74)
       :'<div class="empty"><i class="bi bi-check-circle" style="color:var(--green)"></i> 미지급 없음 (누락 없음)</div>');
   }
   if(_qTab==='comm'){ return twoColTbl(q.comm,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th class="l">채널</th><th class="l">담당</th><th></th>',
-      r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.channel)+'</td><td class="l">'+esc(r.rep)+'</td><td>'+_abtn('참조입력','quickComm',r.no)+'</td></tr>',56); }
+      r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td class="l">'+esc(r.channel)+'</td><td class="l">'+esc(r.rep)+'</td><td>'+_abtn('참조입력','quickComm',r.no)+'</td></tr>',74); }
   if(_qTab==='tax'){ return twoColTbl(q.tax,'<th class="rk">#</th><th class="l">거래처</th><th class="l">제품</th><th>납품일</th><th class="l">담당</th><th></th>',
-      r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td>'+esc(r.dDelivered||'-')+'</td><td class="l">'+esc(r.rep)+'</td><td>'+_abtn('발행일','quickTax',r.no)+'</td></tr>',56); }
+      r=>'<tr onclick="detail('+r.no+')"><td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l">'+esc(r.product)+'</td><td>'+esc(r.dDelivered||'-')+'</td><td class="l">'+esc(r.rep)+'</td><td>'+_abtn('발행일','quickTax',r.no)+'</td></tr>',74); }
   return '';
 }
 function quickComm(no){ const c=ROWS.find(r=>r.no===no); if(!c)return; window.__dno=null;
