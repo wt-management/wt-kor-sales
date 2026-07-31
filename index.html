@@ -115,6 +115,9 @@ body{min-height:100vh;background:var(--bg);font-family:'Noto Sans KR',sans-serif
 .il-tbl td:nth-child(6),.il-tbl th:nth-child(6){width:280px}
 .il-tbl td:nth-child(7),.il-tbl th:nth-child(7){width:190px}
 .il-tbl td:nth-child(8),.il-tbl th:nth-child(8){width:165px}
+/* 계약 현황 표: 거래처-사업자번호 여백 축소, 비고 확장 */
+.il-tbl2 td:nth-child(2),.il-tbl2 th:nth-child(2){width:150px;padding-right:6px}
+.il-tbl2 td:nth-child(3),.il-tbl2 th:nth-child(3){padding-left:6px}
 .il-row{display:inline-flex;gap:4px;align-items:center;white-space:nowrap}
 .il-lb{font-size:10.5px;font-weight:700;color:var(--mut);width:44px;text-align:right}
 .il-in{padding:2px 6px;font-size:11.5px;display:inline-block}
@@ -301,6 +304,7 @@ mark{background:#fde68a;color:inherit;padding:0 1px;border-radius:2px}
   <div id="fchips"></div>
 
   <div id="view-work" class="view on"></div>
+  <div id="view-queue" class="view"></div>
   <div id="view-ledger" class="view"></div>
   <div id="view-closing" class="view"></div>
 </main>
@@ -356,6 +360,7 @@ function toast(m){const t=document.getElementById('toast');t.textContent=m;t.sty
 function grp(a,k){const m={};a.forEach(x=>{const v=x[k]||'미분류';(m[v]=m[v]||[]).push(x);});return m;}
 function closeModal(){document.getElementById('modal').classList.remove('on');}
 function has(v){return !!(v&&String(v).trim()&&String(v).trim()!=='-');}
+function chk(v){return v?'<i class="bi bi-check-circle-fill" style="color:var(--green)"></i>':'<i class="bi bi-x-circle" style="color:var(--red)"></i>';}
 function pd(s){ if(!has(s))return null; const d=new Date(String(s).slice(0,10)); return isNaN(d)?null:d; }
 function today0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
 function isOli(p){ return /^Oligio/i.test(p||''); }
@@ -390,6 +395,11 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='Escape'&&mo){ closeModal(); }
   else if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&mo&&!typing&&window.__dno!=null){ e.preventDefault(); detailNav(e.key==='ArrowRight'?1:-1); }
 });
+/* 날짜·숫자 입력칸 위에서 휠 스크롤 시 값이 바뀌는 크롬 기본동작 방지 — 포커스 해제해서 페이지 스크롤이 정상 동작하게 함 */
+document.addEventListener('wheel',e=>{
+  const t=e.target;
+  if(t&&t.tagName==='INPUT'&&(t.type==='date'||t.type==='number')&&document.activeElement===t)t.blur();
+},{passive:true});
 
 /* ── 인증 ── */
 (function _sso(){ var h=(location.hash||'').replace(/^#/,''); if(h.indexOf('at=')<0)return;
@@ -476,8 +486,8 @@ function filtered(){ return ROWS.filter(r=>{
 
 /* ── 네비/라우팅 ── */
 const VIEWS=[
- ['work','bi-lightning-charge','워크데스크','오늘 처리할 일 — 시스템이 계산한 큐'],
- ['ledger','bi-journal-text','계약 대장','전체 계약 검색·조회·입력'],
+ ['work','bi-table','워크데스크','계약 현황 — 납품일 기준 전체 리스트'],
+ ['queue','bi-lightning-charge','처리 큐','오늘 처리할 일 — 시스템이 계산한 큐'],
  ['closing','bi-calendar2-check','월말 정리','월별 완결 체크·마감']];
 const NEEDTOOLS={ledger:1};
 function queues(){ const T=today0();
@@ -497,7 +507,7 @@ function queues(){ const T=today0();
   };
 }
 function navBadge(k){
-  if(k==='work'){ const q=queues(); const n=q.coup.length+q.comm.length; return n?'<span class="bdg rd">'+n+'</span>':''; }
+  if(k==='queue'){ const q=queues(); const n=q.coup.length+q.comm.length; return n?'<span class="bdg rd">'+n+'</span>':''; }
   return '';
 }
 function buildNav(){ document.getElementById('nav').innerHTML=VIEWS.map(v=>'<button class="tnav" data-v="'+v[0]+'" onclick="go(\''+v[0]+'\')"><i class="bi '+v[1]+'"></i><span class="lbl">'+v[2]+'</span>'+navBadge(v[0])+'</button>').join(''); }
@@ -514,7 +524,7 @@ function render(){
   const R=useF?filtered():ROWS;
   document.getElementById('fcount').innerHTML='<b>'+R.length+'</b>건';
   renderChips(useF);
-  ({work:vWork,ledger:vLedger,closing:vClosing}[curView])(R);
+  ({work:vWork,queue:vQueue,ledger:vLedger,closing:vClosing}[curView])(R);
 }
 function renderChips(show){ const el=document.getElementById('fchips'); if(!el)return;
   if(!show){ el.innerHTML=''; return; }
@@ -736,32 +746,36 @@ function ilCoupon(no){ const d=(document.getElementById('il-cd-'+no)||{}).value;
 function ilComm(no){ const v=((document.getElementById('il-cm-'+no)||{}).value||'').trim(); if(!v||v==='영업전략파트-'){toast('참조코드를 입력하세요');return;} ilSave(no,{commission:v},'#'+no+' 수수료 참조 기록'); }
 function _abtn(label,fn,no,color){ return '<button class="btn btn-sm '+(color||'btn-outline-primary')+'" style="padding:1px 10px;font-size:11px" onclick="event.stopPropagation();'+fn+'('+no+')">'+label+'</button>'; }
 function vWork(){
-  const q=queues();
   // ── 생 리스트 (한눈에 · 수기 필드 인라인 자동저장) ──
   const rows=qfApply(ROWS.slice().sort((a,b)=>a.no-b.no),'dDelivered');
   const inS='class="form-control form-control-sm il-in" onclick="event.stopPropagation()"';
-  const chkY=v=>v?'<i class="bi bi-check-circle-fill" style="color:var(--green)"></i>':'<span class="mut">-</span>';
-  let h='<div class="wt-card" style="margin-bottom:14px"><div class="wt-st"><i class="bi bi-table"></i>계약 현황'+
+  let h='<div class="wt-card"><div class="wt-st"><i class="bi bi-table"></i>계약 현황'+
     '<span class="hint">행 클릭 상세 · 수금일·수수료·기안번호·비고는 칸에서 바로 입력(자동저장)</span></div>'+
     qfBar(rows.length)+
-    (rows.length?'<div class="scroll" style="max-height:64vh"><table class="wt-tbl il-tbl2"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">사업자번호</th><th class="l">제품명</th><th>금액</th><th class="l">담당</th><th>납품일</th><th>수금</th><th>수금일</th><th>수수료</th><th>수수료금액</th><th class="l">기안번호</th><th>쿠폰</th><th class="l">비고</th></tr></thead><tbody>'+
-    rows.map(r=>'<tr onclick="detail('+r.no+')">'+
-      '<td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l tx2">'+esc(r.biznum||'-')+'</td><td class="l">'+esc(r.product)+'</td><td>'+fmt(r.amount)+'</td><td class="l">'+esc(r.rep)+'</td><td>'+esc(r.dDelivered||'-')+'</td>'+
-      '<td>'+chkY(has(r.payDate))+'</td>'+
-      '<td onclick="event.stopPropagation()"><input type="date" '+inS+' style="width:122px" value="'+esc(String(r.payDate||'').slice(0,10))+'" onchange="ilF('+r.no+',\'payDate\',this.value)"></td>'+
+    (rows.length?'<div class="scroll" style="max-height:74vh"><table class="wt-tbl il-tbl2"><thead><tr><th class="rk">#</th><th class="l">거래처</th><th class="l">사업자번호</th><th class="l">제품명</th><th>금액</th><th class="l">담당</th><th>납품</th><th>계산서</th><th>쿠폰</th><th>수수료</th><th>수금</th><th>납품일</th><th>수금일</th><th>수수료금액</th><th class="l">기안번호</th><th class="l">비고</th></tr></thead><tbody>'+
+    rows.map(r=>{const cpT=isCoupon(r.product);return '<tr onclick="detail('+r.no+')">'+
+      '<td class="rk">'+r.no+'</td><td class="l nm">'+esc(r.cust)+'</td><td class="l tx2">'+esc(r.biznum||'-')+'</td><td class="l">'+esc(r.product)+'</td><td>'+fmt(r.amount)+'</td><td class="l">'+esc(r.rep)+'</td>'+
+      '<td>'+chk(has(r.dDelivered))+'</td>'+
+      '<td>'+chk(has(r.dTax))+'</td>'+
+      '<td>'+(cpT?chk(has(r.couponDate)):'<span class="mut">-</span>')+'</td>'+
       '<td onclick="event.stopPropagation()"><input type="checkbox" '+(commPaid(r)?'checked':'')+' onchange="ilF('+r.no+',\'commYN\',this.checked?\'Y\':\'\')"></td>'+
+      '<td>'+chk(has(r.payDate))+'</td>'+
+      '<td class="l">'+esc(r.dDelivered||'-')+'</td>'+
+      '<td onclick="event.stopPropagation()"><input type="date" '+inS+' style="width:122px" value="'+esc(String(r.payDate||'').slice(0,10))+'" onchange="ilF('+r.no+',\'payDate\',this.value)"></td>'+
       '<td onclick="event.stopPropagation()"><input type="number" '+inS+' style="width:92px;text-align:right" value="'+esc(r.commAmount!=null?r.commAmount:'')+'" placeholder="금액" onchange="ilF('+r.no+',\'commAmount\',this.value===\'\'?null:Number(this.value))"></td>'+
       '<td onclick="event.stopPropagation()"><input '+inS+' style="width:140px" value="'+esc(r.commission&&r.commission!=='-'?r.commission:'')+'" placeholder="영업전략파트-" onchange="ilF('+r.no+',\'commission\',this.value)"></td>'+
-      '<td>'+(isCoupon(r.product)?(has(r.couponDate)?chkY(true):'<span style="color:var(--amber);font-weight:700;font-size:11px">미지급</span>'):'<span class="mut">-</span>')+'</td>'+
-      '<td onclick="event.stopPropagation()"><input '+inS+' style="width:120px" value="'+esc(r.note||'')+'" onchange="ilF('+r.no+',\'note\',this.value)"></td>'+
-      '</tr>').join('')+'</tbody></table></div>':'<div class="empty">조건에 맞는 계약이 없습니다</div>')+'</div>';
-  // ── 미니 처리 큐 (쿠폰·적립금 / 수수료) ──
+      '<td onclick="event.stopPropagation()"><input '+inS+' style="width:220px" value="'+esc(r.note||'')+'" onchange="ilF('+r.no+',\'note\',this.value)"></td>'+
+      '</tr>';}).join('')+'</tbody></table></div>':'<div class="empty">조건에 맞는 계약이 없습니다</div>')+'</div>';
+  document.getElementById('view-work').innerHTML=h;
+}
+function vQueue(){
+  const q=queues();
   const tb=t=>'<button class="wt-tab'+(_qTab===t[0]?' on':'')+'" style="padding:3px 11px" onclick="qTab(\''+t[0]+'\')">'+t[1]+' '+t[2]+'</button>';
   const body=qBody(q);
-  h+='<div class="wt-card"><div class="wt-st"><i class="bi bi-lightning-charge"></i>처리 큐'+
+  const h='<div class="wt-card"><div class="wt-st"><i class="bi bi-lightning-charge"></i>처리 큐'+
     '<span style="margin-left:10px;display:inline-flex;gap:4px;flex-wrap:wrap">'+[['coup','쿠폰·적립금',q.coup.length],['comm','수수료',q.comm.length]].map(tb).join('')+'</span>'+
     '<span class="hint">누락 방지 목록 · 일괄 지급 가능</span></div>'+body+'</div>';
-  document.getElementById('view-work').innerHTML=h;
+  document.getElementById('view-queue').innerHTML=h;
   if(_qTab==='coup')renderBulk();
 }
 async function ilF(no,key,val){ const c=ROWS.find(r=>r.no===no); if(!c)return; const p={}; p[key]=val; await ilSave(no,p,'#'+no+' 저장됨'); }
@@ -845,7 +859,6 @@ function vClosing(){
   const m=(months.indexOf(_clsM)>=0)?_clsM:(months[months.length-1]||0); _clsM=m;
   const rows=ROWS.filter(r=>r.saleMonth===m).sort((a,b)=>a.no-b.no);
   const open=rows.filter(r=>_needs(r).length);
-  const chk=v=>v?'<i class="bi bi-check-circle-fill" style="color:var(--green)"></i>':'<i class="bi bi-x-circle" style="color:var(--red)"></i>';
   const nd=(r,k)=>_needs(r).indexOf(k)>=0;
   const show=_clsOpen?open:rows;
   let h='<div class="wt-band wt-band-sm">'+
