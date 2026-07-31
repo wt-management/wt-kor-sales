@@ -12,7 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
-:root{--blue:#2563eb;--navy:#16324f;--ink:#182230;--text:#1f2937;--text-2:#64748b;--mut:#94a3b8;--border:#e4e8ef;--line:#eef1f5;--bg:#f5f7fb;--white:#fff;--green:#15803d;--red:#dc2626;--amber:#d97706;--hover:#eef2f7;--active:#eaf1fd}
+:root{--blue:#2563eb;--navy:#16324f;--ink:#182230;--text:#1f2937;--text-2:#64748b;--mut:#94a3b8;--border:#e4e8ef;--line:#eef1f5;--bg:#f5f7fb;--white:#fff;--green:#15803d;--red:#dc2626;--amber:#d97706;--yellow:#eab308;--hover:#eef2f7;--active:#eaf1fd}
 *{box-sizing:border-box}
 html{color-scheme:only light}
 body{min-height:100vh;background:var(--bg);font-family:'Noto Sans KR',sans-serif;margin:0;color:var(--text);font-size:14px}
@@ -765,7 +765,7 @@ function vWork(){
       '<td>'+chk(has(r.dDelivered))+'</td>'+
       '<td>'+chk(has(r.dTax))+'</td>'+
       '<td>'+(cpT?chk(has(r.couponDate)):'<span class="mut">-</span>')+'</td>'+
-      '<td>'+chk(commPaid(r),'amber')+'</td>'+
+      '<td>'+chk(commPaid(r),'yellow')+'</td>'+
       '<td>'+chk(has(r.payDate))+'</td>'+
       '<td class="l">'+esc(r.dDelivered||'-')+'</td>'+
       '<td onclick="event.stopPropagation()"><input type="date" '+inS+' style="width:122px" value="'+esc(String(r.payDate||'').slice(0,10))+'" onchange="ilF('+r.no+',\'payDate\',this.value)"></td>'+
