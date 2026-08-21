@@ -1343,14 +1343,20 @@ function vStock(){
 }
 function stkNew(){ stkForm(null); }
 function stkEdit(id){ const r=SHIP_ROWS.find(x=>x._id===id); if(r)stkForm(r); }
+function stkQtyLabels(product){
+  (SHIP_PRODUCTS[product]||[]).forEach(k=>{ const el=document.getElementById('sf-qlbl-'+k[0]); if(el)el.textContent=k[1]; });
+}
 function stkForm(r){
-  const cfg=SHIP_PRODUCTS[_stkProduct];
+  const startProduct=r?r.product:_stkProduct;
+  const cfg=SHIP_PRODUCTS[startProduct];
   const v=r||{date:todayStr(),author:MENAME,category:'출고',rep:'',type:'영업관리',detail:'',qty:{},client:'',dealer:'',note:''};
   const cf=(label,inner,wide)=>'<div class="cf'+(wide?' wide':'')+'"><label>'+label+'</label>'+inner+'</div>';
   const inp=(id,val,ph)=>'<input id="'+id+'" class="form-control form-control-sm" value="'+esc(val||'')+'"'+(ph?' placeholder="'+ph+'"':'')+'>';
   const selHtml=(id,val,arr)=>'<select id="'+id+'" class="form-select form-select-sm">'+arr.map(o=>'<option'+(o===val?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>';
-  document.getElementById('mbox').innerHTML='<div class="mhd"><div><h3><i class="bi bi-box-seam" style="color:var(--blue);margin-right:6px"></i>'+(r?'출고대장 수정':'신규 입고·출고 등록')+'</h3><div class="tx2" style="font-size:12px;margin-top:3px">'+_stkProduct+'</div></div><button class="x" onclick="closeModal()"><i class="bi bi-x-lg"></i></button></div>'+
+  const productSel='<select id="sf-product" class="form-select form-select-sm" onchange="stkQtyLabels(this.value)">'+Object.keys(SHIP_PRODUCTS).map(p=>'<option'+(p===startProduct?' selected':'')+'>'+esc(p)+'</option>').join('')+'</select>';
+  document.getElementById('mbox').innerHTML='<div class="mhd"><div><h3><i class="bi bi-box-seam" style="color:var(--blue);margin-right:6px"></i>'+(r?'출고대장 수정':'신규 입고·출고 등록')+'</h3></div><button class="x" onclick="closeModal()"><i class="bi bi-x-lg"></i></button></div>'+
     '<div class="mbody"><div class="cform">'+
+    cf('제품',productSel)+
     cf('일자','<input id="sf-date" type="date" class="form-control form-control-sm" value="'+esc(v.date||'')+'">')+
     cf('구분',selHtml('sf-cat',v.category,['출고','입고']))+
     cf('담당자',inp('sf-rep',v.rep))+
@@ -1360,7 +1366,7 @@ function stkForm(r){
     cf('대리점',inp('sf-dealer',v.dealer))+
     cf('비고',inp('sf-note',v.note),true)+
     '<div class="cf wide"><label>수량</label><div style="display:flex;gap:8px;flex-wrap:wrap">'+
-      cfg.map(k=>'<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px"><span class="mut">'+k[1]+'</span><input id="sf-q-'+k[0]+'" class="form-control form-control-sm" style="width:66px;text-align:right" value="'+esc(v.qty&&v.qty[k[0]]!=null?v.qty[k[0]]:'')+'"></span>').join('')+
+      cfg.map(k=>'<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px"><span class="mut" id="sf-qlbl-'+k[0]+'">'+k[1]+'</span><input id="sf-q-'+k[0]+'" class="form-control form-control-sm" style="width:66px;text-align:right" value="'+esc(v.qty&&v.qty[k[0]]!=null?v.qty[k[0]]:'')+'"></span>').join('')+
       '</div></div>'+
     '</div>'+
     '<div class="cform-foot"><span>'+(r?'<button class="btn btn-outline-danger btn-sm" onclick="stkDelete('+r._id+')"><i class="bi bi-trash"></i> 삭제</button>':'<span></span>')+'</span>'+
@@ -1368,14 +1374,15 @@ function stkForm(r){
   document.getElementById('modal').classList.add('on');
 }
 async function stkSave(id){
-  const cfg=SHIP_PRODUCTS[_stkProduct];
   const g=k=>{const el=document.getElementById(k);return el?el.value.trim():'';};
+  const product=g('sf-product')||_stkProduct;
+  const cfg=SHIP_PRODUCTS[product];
   const qty={}; cfg.forEach(k=>{ const n=numOrNull(g('sf-q-'+k[0])); if(n!=null)qty[k[0]]=n; });
   const d={date:g('sf-date'),author:MENAME,category:g('sf-cat'),rep:g('sf-rep'),type:g('sf-type'),detail:g('sf-detail'),qty:qty,client:g('sf-client'),dealer:g('sf-dealer'),note:g('sf-note')};
   if(!d.date){ toast('일자를 입력하세요'); return; }
   try{
-    if(id){ const {error}=await _sb.from('kor_shipments').update({data:d,updated_at:new Date().toISOString(),updated_by:MENAME}).eq('id',id); if(error)throw error; }
-    else{ const maxSeq=Math.max(0,...stkRows(_stkProduct).map(x=>x.seq||0)); const {error}=await _sb.from('kor_shipments').insert({product:_stkProduct,seq:maxSeq+1,data:d,updated_by:MENAME}); if(error)throw error; }
+    if(id){ const {error}=await _sb.from('kor_shipments').update({product:product,data:d,updated_at:new Date().toISOString(),updated_by:MENAME}).eq('id',id); if(error)throw error; }
+    else{ const maxSeq=Math.max(0,...stkRows(product).map(x=>x.seq||0)); const {error}=await _sb.from('kor_shipments').insert({product:product,seq:maxSeq+1,data:d,updated_by:MENAME}); if(error)throw error; }
   }catch(e){ toast('저장 실패: '+(e.message||'')); return; }
   await loadShipments(); closeModal(); render(); toast('저장됐습니다');
 }
