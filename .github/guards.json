@@ -1,5 +1,9 @@
 {
   "_설명": "한 번 고친 로직이 다른 작업에 밀려 사라지는 사고를 막기 위한 회귀 검사 목록입니다. 버그를 고칠 때마다 '이 코드가 남아 있어야 한다'를 한 줄 추가하세요. push 할 때 GitHub Actions 가 확인합니다.",
   "_예시": { "files": { "index.html": [ { "id": "짧은이름", "why": "빠지면 무슨 일이 생기는지", "must": "파일에 반드시 남아 있어야 할 코드 한 조각" } ] } },
-  "files": {}
+  "files": {
+    "index.html": [
+      { "id": "shipments-pagination", "why": "Supabase max_rows(500) 캡 때문에 재고 관리 이력이 500건만 로드되고 나머지는 조용히 잘려나갔던 버그. 빈 페이지가 올 때까지 range()로 이어받지 않으면 재발함", "must": "if(error||!data||!data.length)break;" }
+    ]
+  }
 }
