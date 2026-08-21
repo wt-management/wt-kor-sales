@@ -1318,16 +1318,13 @@ function vStock(){
   const pnames=Object.keys(SHIP_PRODUCTS);
   const curByProduct={}; pnames.forEach(p=>curByProduct[p]=stkCurrent(p));
   const shared=curByProduct[pnames[0]];
-  const statBox=(label,val,rightAlign)=>'<span style="display:flex;flex-direction:column;align-items:'+(rightAlign?'flex-end':'flex-start')+';gap:1px"><span style="font-size:10px;font-weight:700;color:var(--gold-text);opacity:.8;white-space:nowrap">'+label+'</span><span style="font-size:18px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums">'+fmt(val)+'<span style="font-size:11px;font-weight:600;margin-left:1px;color:var(--gold-text)">개</span></span></span>';
+  const statBox=(label,val)=>'<span style="display:flex;flex-direction:column;gap:1px"><span style="font-size:10px;font-weight:700;color:var(--gold-text);opacity:.8;white-space:nowrap">'+label+'</span><span style="font-size:18px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums">'+fmt(val)+'<span style="font-size:11px;font-weight:600;margin-left:1px;color:var(--gold-text)">개</span></span></span>';
   const vDiv='<div style="width:1px;align-self:stretch;background:rgba(133,77,14,.18)"></div>';
-  const tipGroup=pnames.map((p,i)=>(i>0?vDiv:'')+
-    '<div style="display:flex;align-items:center;gap:18px"><span style="font-size:12px;font-weight:800;color:var(--gold-text)">'+p+'</span>'+
-    SHIP_PRODUCTS[p].filter(k=>k[0]==='tip1'||k[0]==='tip2').map(k=>statBox(k[1],curByProduct[p][k[0]])).join('')+
-    '</div>').join('');
-  const sharedGroup='<div style="display:flex;align-items:center;gap:18px"><span style="font-size:12px;font-weight:800;color:var(--gold-text)">공통</span>'+
-    ['oil','pad','gas'].map(k=>statBox(k==='oil'?'Oil':(k==='pad'?'Pad':'Gas'),shared[k],true)).join('')+'</div>';
-  let h='<div style="background:var(--lemon);border:1px solid var(--lemon-2);border-radius:12px;padding:13px 24px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 24px">'+
-    '<div style="display:flex;align-items:center;gap:20px">'+tipGroup+'</div>'+vDiv+sharedGroup+'</div>';
+  const group=(label,items)=>'<div style="display:flex;align-items:center;gap:18px"><span style="font-size:12px;font-weight:800;color:var(--gold-text)">'+label+'</span>'+items+'</div>';
+  const groups=pnames.map(p=>group(p,SHIP_PRODUCTS[p].filter(k=>k[0]==='tip1'||k[0]==='tip2').map(k=>statBox(k[1],curByProduct[p][k[0]])).join('')));
+  groups.push(group('공통',['oil','pad','gas'].map(k=>statBox(k==='oil'?'Oil':(k==='pad'?'Pad':'Gas'),shared[k])).join('')));
+  let h='<div style="background:var(--lemon);border:1px solid var(--lemon-2);border-radius:12px;padding:13px 24px;margin-bottom:16px;display:flex;align-items:center;flex-wrap:wrap;gap:36px">'+
+    groups.join(vDiv)+'</div>';
   h+='<div class="wt-card"><div class="wt-st"><i class="bi bi-box-seam"></i>소모품 출고대장'+
     '<span style="margin-left:10px;display:inline-flex;gap:4px">'+Object.keys(SHIP_PRODUCTS).map(p=>'<button class="wt-tab'+(p===_stkProduct?' on':'')+'" style="padding:3px 11px" onclick="stkProduct(\''+p+'\')">'+p+'</button>').join('')+'</span>'+
     '<span class="hint">행 클릭 상세·수정</span></div>'+
