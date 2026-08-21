@@ -311,6 +311,7 @@ mark{background:#fde68a;color:inherit;padding:0 1px;border-radius:2px}
   <div id="view-ledger" class="view"></div>
   <div id="view-closing" class="view"></div>
   <div id="view-upload" class="view"></div>
+  <div id="view-stock" class="view"></div>
 </main>
 </div>
 
@@ -426,7 +427,7 @@ async function enter(user){ ME=user.email||''; MENAME=ME.split('@')[0];
     if(pr&&pr.display_name)MENAME=pr.display_name;
     document.getElementById('ui-name').textContent=MENAME;
     document.getElementById('ui-dept').textContent=(pr&&pr.dept)?pr.dept:(ME); }catch(e){ document.getElementById('ui-name').textContent=MENAME; }
-  await loadData(); detectChanges(); await renderSwitcher();
+  await loadData(); await loadShipments(); detectChanges(); await renderSwitcher();
   document.getElementById('load').style.display='none'; document.getElementById('topwrap').style.display='block';
   initFilters(); buildNav(); route(); renderChgBar();
 }
@@ -495,7 +496,8 @@ const VIEWS=[
  ['work','bi-table','워크데스크','계약 현황 — 납품일 기준 전체 리스트'],
  ['queue','bi-lightning-charge','처리 큐','오늘 처리할 일 — 시스템이 계산한 큐'],
  ['closing','bi-calendar2-check','월말 정리','월별 완결 체크·마감'],
- ['upload','bi-cloud-upload','데이터 업로드','엑셀로 계약 현황 일괄 갱신']];
+ ['upload','bi-cloud-upload','데이터 업로드','엑셀로 계약 현황 일괄 갱신'],
+ ['stock','bi-box-seam','재고 관리','Oligio·Oligio-X 소모품 입출고·현재고']];
 const NEEDTOOLS={ledger:1};
 function queues(){ const T=today0();
   const undel=ROWS.filter(r=>!has(r.dDelivered));
@@ -531,7 +533,7 @@ function render(){
   const R=useF?filtered():ROWS;
   document.getElementById('fcount').innerHTML='<b>'+R.length+'</b>건';
   renderChips(useF);
-  ({work:vWork,queue:vQueue,ledger:vLedger,closing:vClosing,upload:vUpload}[curView])(R);
+  ({work:vWork,queue:vQueue,ledger:vLedger,closing:vClosing,upload:vUpload,stock:vStock}[curView])(R);
 }
 function renderChips(show){ const el=document.getElementById('fchips'); if(!el)return;
   if(!show){ el.innerHTML=''; return; }
@@ -1250,6 +1252,183 @@ function showChg(){ window.__dno=null; const c=window.__chg;
     (sec('신규 계약',c.neo,'#2563eb'))+(sec('납품 완료 전환',c.del,'#15803d'))+(sec('취소',c.can,'#dc2626'))+'</div>';
   document.getElementById('modal').classList.add('on'); }
 
+/* ══ 재고 관리 (Oligio·Oligio-X 소모품 출고대장) ══
+   kor_shipments 테이블: {product,seq,data:{date,author,category,rep,type,detail,qty:{...},client,dealer,note}}
+   현재고 = 해당 product의 모든 기록 합(입고 +, 출고 -). 엑셀 업로드는 순서/일자/작성자/구분/담당자/
+   출고유형/출고상세/수량(5칸)/거래처/대리점/비고 고정 컬럼 배치를 그대로 읽고, 이미 있는 기록과
+   완전히 같은 행(지문 일치)은 건너뛰어 중복 업로드를 방지한다. */
+let SHIP_ROWS=[];
+const SHIP_PRODUCTS={
+ 'Oligio':   [['tip1','F-4.0'],['tip2','E-0.25'],['oil','Oil'],['pad','Pad'],['gas','Gas']],
+ 'Oligio-X': [['tip1','XF-4.0'],['tip2','XE-0.25'],['oil','Oil'],['pad','Pad'],['gas','Gas']]};
+const SHIP_TYPES=['영업관리','임상_연구개발','기타'];
+let _stkProduct='Oligio', _stkSortKey='date', _stkSortDir=-1;
+let SF={q:'',rep:'',type:'',cat:'',d1:'',d2:''};
+async function loadShipments(){
+  try{ const {data,error}=await _sb.from('kor_shipments').select('id,product,seq,data').order('seq',{ascending:true});
+    SHIP_ROWS=(!error&&data)?data.map(r=>Object.assign({},r.data,{_id:r.id,product:r.product,seq:r.seq})):[];
+  }catch(e){ SHIP_ROWS=[]; }
+}
+function stkRows(product){ return SHIP_ROWS.filter(r=>r.product===product); }
+function stkCurrent(product){
+  const cfg=SHIP_PRODUCTS[product]; const sums={}; cfg.forEach(k=>sums[k[0]]=0);
+  stkRows(product).forEach(r=>{ const sign=r.category==='입고'?1:(r.category==='출고'?-1:0); if(!sign)return; const q=r.qty||{};
+    cfg.forEach(k=>{ const v=Number(q[k[0]]); if(!isNaN(v))sums[k[0]]+=sign*v; }); });
+  return sums;
+}
+function stkProduct(p){ _stkProduct=p; SF={q:'',rep:'',type:'',cat:'',d1:'',d2:''}; render(); }
+function sfSet(k,v){ SF[k]=v; render(); }
+function sfReset(){ SF={q:'',rep:'',type:'',cat:'',d1:'',d2:''}; render(); }
+function sfApply(rows){ return rows.filter(r=>{
+  if(SF.cat&&r.category!==SF.cat)return false;
+  if(SF.type&&r.type!==SF.type)return false;
+  if(SF.rep&&r.rep!==SF.rep)return false;
+  if(SF.q){ const s=(String(r.client||'')+' '+String(r.dealer||'')).toLowerCase(); if(s.indexOf(SF.q.toLowerCase())<0)return false; }
+  if(SF.d1||SF.d2){ const d=pd(r.date); if(!d)return false; if(SF.d1&&d<pd(SF.d1))return false; if(SF.d2&&d>pd(SF.d2))return false; }
+  return true; }); }
+function stkSort(k){ if(_stkSortKey===k){ if(_stkSortDir===1)_stkSortDir=-1; else{_stkSortKey='date';_stkSortDir=-1;} } else{_stkSortKey=k;_stkSortDir=1;} render(); }
+function vStock(){
+  const cfg=SHIP_PRODUCTS[_stkProduct];
+  const cur=stkCurrent(_stkProduct);
+  const all=stkRows(_stkProduct);
+  const rows=sfApply(all).slice().sort((a,b)=>{ let x=a[_stkSortKey],y=b[_stkSortKey]; if(typeof x==='string'||typeof y==='string'){x=x||'';y=y||'';return _stkSortDir*String(x).localeCompare(String(y));} return _stkSortDir*((x||0)-(y||0)); });
+  const fmtQty=q=>{ if(!q)return '<span class="mut">-</span>'; const parts=cfg.filter(k=>{const v=q[k[0]];return v!=null&&Number(v)!==0&&!isNaN(Number(v));}).map(k=>k[1]+' '+q[k[0]]); return parts.length?parts.join(' · '):'<span class="mut">-</span>'; };
+  const reps=[...new Set(all.map(r=>r.rep))].filter(Boolean).sort();
+  const sel=(k,label,arr)=>'<select class="form-select form-select-sm" style="width:auto;font-size:11.5px;padding:3px 26px 3px 8px" onchange="sfSet(\''+k+'\',this.value)"><option value="">'+label+'</option>'+arr.map(v=>'<option'+(SF[k]===v?' selected':'')+'>'+esc(v)+'</option>').join('')+'</select>';
+  const sfBar='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 10px;padding:8px 10px;background:#f8fafc;border:1px solid var(--line);border-radius:9px">'+
+    sel('cat','전체 구분',['입고','출고'])+sel('type','전체 유형',SHIP_TYPES)+sel('rep','전체 담당자',reps)+
+    '<input class="form-control form-control-sm" style="width:170px;font-size:11.5px;padding:3px 8px" placeholder="거래처·대리점 검색" value="'+esc(SF.q)+'" onchange="sfSet(\'q\',this.value)">'+
+    '<span class="mut" style="font-size:11px">일자</span>'+
+    '<input type="date" class="form-control form-control-sm" style="width:130px;font-size:11.5px;padding:3px 6px" value="'+esc(SF.d1)+'" onchange="sfSet(\'d1\',this.value)">~'+
+    '<input type="date" class="form-control form-control-sm" style="width:130px;font-size:11.5px;padding:3px 6px" value="'+esc(SF.d2)+'" onchange="sfSet(\'d2\',this.value)">'+
+    '<button class="wt-tab" style="padding:3px 10px" onclick="sfReset()"><i class="bi bi-arrow-counterclockwise"></i>초기화</button>'+
+    '<span class="mut" style="margin-left:auto;font-size:11.5px;font-weight:700">표시 '+rows.length+'건</span></div>';
+  const SCOLS=[['date','일자'],['category','구분'],['rep','담당자'],['type','유형'],['detail','상세'],['','수량'],['client','거래처'],['dealer','대리점'],['note','비고']];
+  const head=SCOLS.map(c=>c[0]?('<th class="l" onclick="stkSort(\''+c[0]+'\')">'+c[1]+(_stkSortKey===c[0]?(_stkSortDir>0?' ▲':' ▼'):'')+'</th>'):('<th class="l">'+c[1]+'</th>')).join('');
+  let h='<div class="wt-grid g-2" style="margin-bottom:14px">'+cfg.map(k=>fact(k[1],fmt(cur[k[0]]),'개','현재고')).join('')+'</div>';
+  h+='<div class="wt-card"><div class="wt-st"><i class="bi bi-box-seam"></i>소모품 출고대장'+
+    '<span style="margin-left:10px;display:inline-flex;gap:4px">'+Object.keys(SHIP_PRODUCTS).map(p=>'<button class="wt-tab'+(p===_stkProduct?' on':'')+'" style="padding:3px 11px" onclick="stkProduct(\''+p+'\')">'+p+'</button>').join('')+'</span>'+
+    '<span class="hint">행 클릭 상세·수정</span></div>'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
+    '<button class="btn btn-primary btn-sm" onclick="stkNew()"><i class="bi bi-plus-lg"></i> 신규 입고·출고 등록</button>'+
+    '<input type="file" id="stk-file" accept=".xlsx,.xls" style="display:none" onchange="onStkFile(event)">'+
+    '<button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById(\'stk-file\').click()"><i class="bi bi-file-earmark-excel"></i> 출고대장 엑셀 업로드</button>'+
+    '<span class="mut" id="stk-fname" style="font-size:12px"></span></div>'+
+    '<div id="stk-upload-result"></div>'+
+    sfBar+
+    (rows.length?'<div class="scroll" style="max-height:60vh"><table class="wt-tbl"><thead><tr>'+head+'</tr></thead><tbody>'+
+      rows.map(r=>'<tr onclick="stkEdit('+r._id+')"><td class="l">'+esc(r.date||'-')+'</td><td class="l">'+(r.category==='입고'?'<b style="color:var(--green)">입고</b>':'출고')+'</td><td class="l">'+esc(r.rep||'-')+'</td><td class="l">'+esc(r.type||'-')+'</td><td class="l">'+esc(r.detail||'-')+'</td><td class="l">'+fmtQty(r.qty)+'</td><td class="l">'+esc(r.client||'-')+'</td><td class="l">'+esc(r.dealer||'-')+'</td><td class="l">'+esc(r.note||'-')+'</td></tr>').join('')+
+      '</tbody></table></div>':'<div class="empty">조건에 맞는 기록이 없습니다</div>')+
+    '</div>';
+  document.getElementById('view-stock').innerHTML=h;
+}
+function stkNew(){ stkForm(null); }
+function stkEdit(id){ const r=SHIP_ROWS.find(x=>x._id===id); if(r)stkForm(r); }
+function stkForm(r){
+  const cfg=SHIP_PRODUCTS[_stkProduct];
+  const v=r||{date:todayStr(),author:MENAME,category:'출고',rep:'',type:'영업관리',detail:'',qty:{},client:'',dealer:'',note:''};
+  const cf=(label,inner,wide)=>'<div class="cf'+(wide?' wide':'')+'"><label>'+label+'</label>'+inner+'</div>';
+  const inp=(id,val,ph)=>'<input id="'+id+'" class="form-control form-control-sm" value="'+esc(val||'')+'"'+(ph?' placeholder="'+ph+'"':'')+'>';
+  const selHtml=(id,val,arr)=>'<select id="'+id+'" class="form-select form-select-sm">'+arr.map(o=>'<option'+(o===val?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>';
+  document.getElementById('mbox').innerHTML='<div class="mhd"><div><h3><i class="bi bi-box-seam" style="color:var(--blue);margin-right:6px"></i>'+(r?'출고대장 수정':'신규 입고·출고 등록')+'</h3><div class="tx2" style="font-size:12px;margin-top:3px">'+_stkProduct+'</div></div><button class="x" onclick="closeModal()"><i class="bi bi-x-lg"></i></button></div>'+
+    '<div class="mbody"><div class="cform">'+
+    cf('일자','<input id="sf-date" type="date" class="form-control form-control-sm" value="'+esc(v.date||'')+'">')+
+    cf('구분',selHtml('sf-cat',v.category,['출고','입고']))+
+    cf('담당자',inp('sf-rep',v.rep))+
+    cf('유형',selHtml('sf-type',v.type,SHIP_TYPES))+
+    cf('상세',inp('sf-detail',v.detail,'예: 단기데모'))+
+    cf('거래처',inp('sf-client',v.client))+
+    cf('대리점',inp('sf-dealer',v.dealer))+
+    cf('비고',inp('sf-note',v.note),true)+
+    '<div class="cf wide"><label>수량</label><div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      cfg.map(k=>'<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px"><span class="mut">'+k[1]+'</span><input id="sf-q-'+k[0]+'" class="form-control form-control-sm" style="width:66px;text-align:right" value="'+esc(v.qty&&v.qty[k[0]]!=null?v.qty[k[0]]:'')+'"></span>').join('')+
+      '</div></div>'+
+    '</div>'+
+    '<div class="cform-foot"><span>'+(r?'<button class="btn btn-outline-danger btn-sm" onclick="stkDelete('+r._id+')"><i class="bi bi-trash"></i> 삭제</button>':'<span></span>')+'</span>'+
+    '<div style="display:flex;gap:8px"><button class="btn btn-outline-secondary btn-sm" onclick="closeModal()">취소</button><button class="btn btn-primary btn-sm" onclick="stkSave('+(r?r._id:'null')+')"><i class="bi bi-check-lg"></i> 저장</button></div></div></div>';
+  document.getElementById('modal').classList.add('on');
+}
+async function stkSave(id){
+  const cfg=SHIP_PRODUCTS[_stkProduct];
+  const g=k=>{const el=document.getElementById(k);return el?el.value.trim():'';};
+  const qty={}; cfg.forEach(k=>{ const n=numOrNull(g('sf-q-'+k[0])); if(n!=null)qty[k[0]]=n; });
+  const d={date:g('sf-date'),author:MENAME,category:g('sf-cat'),rep:g('sf-rep'),type:g('sf-type'),detail:g('sf-detail'),qty:qty,client:g('sf-client'),dealer:g('sf-dealer'),note:g('sf-note')};
+  if(!d.date){ toast('일자를 입력하세요'); return; }
+  try{
+    if(id){ const {error}=await _sb.from('kor_shipments').update({data:d,updated_at:new Date().toISOString(),updated_by:MENAME}).eq('id',id); if(error)throw error; }
+    else{ const maxSeq=Math.max(0,...stkRows(_stkProduct).map(x=>x.seq||0)); const {error}=await _sb.from('kor_shipments').insert({product:_stkProduct,seq:maxSeq+1,data:d,updated_by:MENAME}); if(error)throw error; }
+  }catch(e){ toast('저장 실패: '+(e.message||'')); return; }
+  await loadShipments(); closeModal(); render(); toast('저장됐습니다');
+}
+async function stkDelete(id){
+  if(!confirm('이 기록을 삭제할까요?'))return;
+  try{ const {error}=await _sb.from('kor_shipments').delete().eq('id',id); if(error)throw error; }
+  catch(e){ toast('삭제 실패: '+(e.message||'')); return; }
+  await loadShipments(); closeModal(); render(); toast('삭제됐습니다');
+}
+/* 출고대장 엑셀 업로드 — 순서(0)/일자(1)/작성자(2)/구분(3)/담당자(4)/출고유형(5)/출고상세(6)/
+   수량 5칸(7~11)/거래처(12)/대리점(13)/비고(14) 고정 컬럼. 시트명으로 제품 구분. */
+function stkFindHeaderRow(ws){ const ref=ws['!ref']; if(!ref)return null; const range=XLSX.utils.decode_range(ref);
+  const maxR=Math.min(range.e.r,10);
+  for(let r=range.s.r;r<=maxR;r++){ const c0=ws[XLSX.utils.encode_cell({r:r,c:0})]; const c5=ws[XLSX.utils.encode_cell({r:r,c:5})];
+    if(c0&&String(c0.v).trim()==='순서'&&c5&&String(c5.v).trim()==='출고유형')return r; }
+  return null; }
+function stkFindSheets(wb){ const out=[];
+  wb.SheetNames.forEach(name=>{ if(name.indexOf('예시')>=0)return; if(name.indexOf('출고대장')<0)return;
+    const ws=wb.Sheets[name]; if(!ws)return; const hr=stkFindHeaderRow(ws); if(hr==null)return;
+    const product=(name.indexOf('Oligio-X')>=0||name.indexOf('Oligio X')>=0)?'Oligio-X':'Oligio';
+    out.push({name:name,ws:ws,headerRow:hr,product:product}); });
+  return out; }
+function stkParseSheet(ws,headerRow,product){
+  const cfg=SHIP_PRODUCTS[product]; const range=XLSX.utils.decode_range(ws['!ref']); const out=[];
+  const cell=(r,c)=>ws[XLSX.utils.encode_cell({r:r,c:c})]||null; const s=xfCellStr;
+  for(let r=headerRow+2;r<=range.e.r;r++){
+    const dateCell=cell(r,1); if(!dateCell||dateCell.v==null)continue;
+    const date=xfDateFromCell(dateCell); if(!date)continue;
+    const qty={}; cfg.forEach((k,i)=>{ const n=xfNum(s(cell(r,7+i))); if(n!=null)qty[k[0]]=n; });
+    out.push({product:product,date:date,author:s(cell(r,2)),category:s(cell(r,3)),rep:s(cell(r,4)),type:s(cell(r,5)),
+      detail:s(cell(r,6)),qty:qty,client:s(cell(r,12)),dealer:s(cell(r,13)),note:s(cell(r,14))});
+  }
+  return out;
+}
+function shipFingerprint(r){ return [r.product,r.date,r.category,r.rep,r.type,r.detail,r.client,r.dealer,r.note,JSON.stringify(r.qty||{})].join('|'); }
+async function onStkFile(evt){
+  const file=evt.target.files&&evt.target.files[0]; if(!file)return;
+  const fn=document.getElementById('stk-fname'); if(fn)fn.textContent=file.name;
+  const res=document.getElementById('stk-upload-result'); if(!res)return;
+  res.innerHTML='<div class="mut" style="font-size:12px;padding:10px 0"><i class="bi bi-hourglass-split"></i> 분석 중…</div>';
+  try{
+    const buf=await file.arrayBuffer(); const wb=XLSX.read(buf,{type:'array'});
+    const sheets=stkFindSheets(wb);
+    if(!sheets.length){ res.innerHTML='<div class="empty">엑셀에서 "순서"·"출고유형" 컬럼이 있는 출고대장 표를 찾지 못했습니다.</div>'; return; }
+    let parsed=[]; sheets.forEach(sh=>{ parsed=parsed.concat(stkParseSheet(sh.ws,sh.headerRow,sh.product)); });
+    const existing=new Set(SHIP_ROWS.map(shipFingerprint));
+    const toInsert=parsed.filter(r=>!existing.has(shipFingerprint(r)));
+    window.__stkToInsert=toInsert;
+    res.innerHTML='<div class="wt-grid g-2" style="margin-bottom:14px">'+
+      fact('시트',sheets.map(s=>s.product).join(' · '),'','')+fact('분석된 행',parsed.length,'건','')+fact('신규 추가',toInsert.length,'건','이미 있는 기록은 자동 제외')+'</div>'+
+      '<div class="cform-foot"><span class="mut" style="font-size:12px">'+(toInsert.length?(toInsert.length+'건이 추가됩니다'):'추가할 신규 기록이 없습니다(이미 전부 반영됨)')+'</span>'+
+      (toInsert.length?'<button class="btn btn-primary btn-sm" onclick="commitStkUpload()"><i class="bi bi-check-lg"></i> 적용하기</button>':'')+'</div>';
+  }catch(e){ res.innerHTML='<div class="empty">엑셀 분석 중 오류가 발생했습니다: '+esc(e.message||String(e))+'</div>'; }
+  evt.target.value='';
+}
+async function commitStkUpload(){
+  const toInsert=window.__stkToInsert||[]; if(!toInsert.length)return;
+  const res=document.getElementById('stk-upload-result'); if(!res)return;
+  const btn=res.querySelector('.cform-foot button'); if(btn){ btn.disabled=true; btn.textContent='적용 중…'; }
+  const nextSeq={}; Object.keys(SHIP_PRODUCTS).forEach(p=>{ nextSeq[p]=Math.max(0,...stkRows(p).map(x=>x.seq||0))+1; });
+  const payload=toInsert.map(r=>({product:r.product,seq:nextSeq[r.product]++,data:{date:r.date,author:r.author,category:r.category,rep:r.rep,type:r.type,detail:r.detail,qty:r.qty,client:r.client,dealer:r.dealer,note:r.note},updated_by:MENAME}));
+  let ok=0; const errs=[]; const CHUNK=400;
+  for(let i=0;i<payload.length;i+=CHUNK){
+    const chunk=payload.slice(i,i+CHUNK);
+    const {error}=await _sb.from('kor_shipments').insert(chunk);
+    if(error)errs.push(error.message); else ok+=chunk.length;
+  }
+  await loadShipments();
+  res.innerHTML='<div class="wt-card" style="border-color:'+(errs.length?'var(--red)':'var(--green)')+'"><div class="wt-st"><i class="bi '+(errs.length?'bi-exclamation-triangle':'bi-check-circle')+'" style="color:'+(errs.length?'var(--red)':'var(--green)')+'"></i>업로드 완료</div>'+
+    '<div style="font-size:13px;line-height:1.9">신규 추가 <b>'+ok+'</b>건'+(errs.length?('<br><span style="color:var(--red)">오류: '+errs.map(esc).join(' / ')+'</span>'):'')+'</div></div>';
+  window.__stkToInsert=null; render();
+}
 /* ── 사이트 스위처 ── */
 async function renderSwitcher(){
   let reg=[]; try{ reg=(await _sb.from('site_registry').select('*').order('sort_order')).data||[]; }catch(e){}
