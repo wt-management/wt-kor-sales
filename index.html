@@ -1413,7 +1413,10 @@ function stkParseSheet(ws,headerRow,product){
   }
   return out;
 }
-function shipFingerprint(r){ return [r.product,r.date,r.category,r.rep,r.type,r.detail,r.client,r.dealer,r.note,JSON.stringify(r.qty||{})].join('|'); }
+/* 정책: 출고대장 엑셀은 그때그때의 "완성본"을 다시 올리는 방식으로 씀(부분 추가 아님).
+   그래서 업로드하면 시트에서 발견된 제품의 기존 이력을 전부 지우고 새 파일 내용으로 통째로
+   교체한다 — 예전엔 지문이 다른 행(수정된 행 등)을 전부 "신규"로 추가해버려서, 재업로드할
+   때마다 옛 데이터 위에 새 데이터가 쌓여 현재고가 크게 틀어지는 사고가 있었다. */
 async function onStkFile(evt){
   const file=evt.target.files&&evt.target.files[0]; if(!file)return;
   const fn=document.getElementById('stk-fname'); if(fn)fn.textContent=file.name;
@@ -1423,33 +1426,38 @@ async function onStkFile(evt){
     const buf=await file.arrayBuffer(); const wb=XLSX.read(buf,{type:'array'});
     const sheets=stkFindSheets(wb);
     if(!sheets.length){ res.innerHTML='<div class="empty">엑셀에서 "순서"·"출고유형" 컬럼이 있는 출고대장 표를 찾지 못했습니다.</div>'; return; }
-    let parsed=[]; sheets.forEach(sh=>{ parsed=parsed.concat(stkParseSheet(sh.ws,sh.headerRow,sh.product)); });
-    const existing=new Set(SHIP_ROWS.map(shipFingerprint));
-    const toInsert=parsed.filter(r=>!existing.has(shipFingerprint(r)));
-    window.__stkToInsert=toInsert;
-    res.innerHTML='<div class="wt-grid g-2" style="margin-bottom:14px">'+
-      fact('시트',sheets.map(s=>s.product).join(' · '),'','')+fact('분석된 행',parsed.length,'건','')+fact('신규 추가',toInsert.length,'건','이미 있는 기록은 자동 제외')+'</div>'+
-      '<div class="cform-foot"><span class="mut" style="font-size:12px">'+(toInsert.length?(toInsert.length+'건이 추가됩니다'):'추가할 신규 기록이 없습니다(이미 전부 반영됨)')+'</span>'+
-      (toInsert.length?'<button class="btn btn-primary btn-sm" onclick="commitStkUpload()"><i class="bi bi-check-lg"></i> 적용하기</button>':'')+'</div>';
+    const byProduct={};
+    sheets.forEach(sh=>{ byProduct[sh.product]=(byProduct[sh.product]||[]).concat(stkParseSheet(sh.ws,sh.headerRow,sh.product)); });
+    window.__stkReplace=byProduct;
+    res.innerHTML='<div class="warnnote" style="margin-bottom:14px"><b><i class="bi bi-exclamation-triangle"></i> 이 파일에 있는 제품의 기존 이력을 전부 지우고 아래 내용으로 교체합니다.</b> 되돌릴 수 없으니, 이 엑셀이 최신 완성본이 맞는지 확인해주세요.</div>'+
+      '<div class="wt-grid g-2" style="margin-bottom:14px">'+
+      Object.keys(byProduct).map(p=>fact(p,byProduct[p].length+'건',' ','기존 '+stkRows(p).length+'건 → 교체')).join('')+'</div>'+
+      '<div class="cform-foot"><span class="mut" style="font-size:12px">교체를 진행할까요?</span>'+
+      '<button class="btn btn-primary btn-sm" onclick="commitStkUpload()"><i class="bi bi-check-lg"></i> 교체 적용</button></div>';
   }catch(e){ res.innerHTML='<div class="empty">엑셀 분석 중 오류가 발생했습니다: '+esc(e.message||String(e))+'</div>'; }
   evt.target.value='';
 }
 async function commitStkUpload(){
-  const toInsert=window.__stkToInsert||[]; if(!toInsert.length)return;
+  const byProduct=window.__stkReplace; if(!byProduct)return;
   const res=document.getElementById('stk-upload-result'); if(!res)return;
   const btn=res.querySelector('.cform-foot button'); if(btn){ btn.disabled=true; btn.textContent='적용 중…'; }
-  const nextSeq={}; Object.keys(SHIP_PRODUCTS).forEach(p=>{ nextSeq[p]=Math.max(0,...stkRows(p).map(x=>x.seq||0))+1; });
-  const payload=toInsert.map(r=>({product:r.product,seq:nextSeq[r.product]++,data:{date:r.date,author:r.author,category:r.category,rep:r.rep,type:r.type,detail:r.detail,qty:r.qty,client:r.client,dealer:r.dealer,note:r.note},updated_by:MENAME}));
-  let ok=0; const errs=[]; const CHUNK=400;
-  for(let i=0;i<payload.length;i+=CHUNK){
-    const chunk=payload.slice(i,i+CHUNK);
-    const {error}=await _sb.from('kor_shipments').insert(chunk);
-    if(error)errs.push(error.message); else ok+=chunk.length;
+  let delOk=0,insOk=0; const errs=[]; const CHUNK=400;
+  for(const product of Object.keys(byProduct)){
+    const {error:delErr}=await _sb.from('kor_shipments').delete().eq('product',product);
+    if(delErr){ errs.push(product+' 기존 삭제 실패: '+delErr.message); continue; }
+    delOk+=stkRows(product).length;
+    const rows=byProduct[product];
+    const payload=rows.map((r,i)=>({product:product,seq:i+1,data:{date:r.date,author:r.author,category:r.category,rep:r.rep,type:r.type,detail:r.detail,qty:r.qty,client:r.client,dealer:r.dealer,note:r.note},updated_by:MENAME}));
+    for(let i=0;i<payload.length;i+=CHUNK){
+      const chunk=payload.slice(i,i+CHUNK);
+      const {error}=await _sb.from('kor_shipments').insert(chunk);
+      if(error)errs.push(product+' 추가 실패: '+error.message); else insOk+=chunk.length;
+    }
   }
   await loadShipments();
-  res.innerHTML='<div class="wt-card" style="border-color:'+(errs.length?'var(--red)':'var(--green)')+'"><div class="wt-st"><i class="bi '+(errs.length?'bi-exclamation-triangle':'bi-check-circle')+'" style="color:'+(errs.length?'var(--red)':'var(--green)')+'"></i>업로드 완료</div>'+
-    '<div style="font-size:13px;line-height:1.9">신규 추가 <b>'+ok+'</b>건'+(errs.length?('<br><span style="color:var(--red)">오류: '+errs.map(esc).join(' / ')+'</span>'):'')+'</div></div>';
-  window.__stkToInsert=null; render();
+  res.innerHTML='<div class="wt-card" style="border-color:'+(errs.length?'var(--red)':'var(--green)')+'"><div class="wt-st"><i class="bi '+(errs.length?'bi-exclamation-triangle':'bi-check-circle')+'" style="color:'+(errs.length?'var(--red)':'var(--green)')+'"></i>교체 완료</div>'+
+    '<div style="font-size:13px;line-height:1.9">기존 삭제 <b>'+delOk+'</b>건 · 새로 추가 <b>'+insOk+'</b>건'+(errs.length?('<br><span style="color:var(--red)">오류: '+errs.map(esc).join(' / ')+'</span>'):'')+'</div></div>';
+  window.__stkReplace=null; render();
 }
 /* ── 사이트 스위처 ── */
 async function renderSwitcher(){
